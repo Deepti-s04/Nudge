@@ -15,15 +15,30 @@ interface StorageData {
   startedAt: number;
   sessions: Session[];
 }
-interface checksites {
-  hostname: String;
-}
+
 interface BlockedData {
   blockedSites: string[];
 }
+
 interface RestrictedData {
   restrictedSites: string[];
+  restrictedStartedAt: number;
+  restrictedHostname: string;
 }
+interface restrictedObject {
+  restrictedHostname: string;
+  duration: number;
+}
+interface ActiveRestrictedTab {
+  tabId: number;
+  restrictedHostname: string;
+  startedAt: number;
+  currDuration: number;
+}
+
+const activeRestrictedTabs: ActiveRestrictedTab[] = [];
+
+const restrictedUsage: restrictedObject[] = [];
 
 export default defineBackground(() => {
   let blockedSites = ["instagram.com"];
@@ -38,11 +53,9 @@ export default defineBackground(() => {
             blockedSites: blockedSites,
           });
         } else if (msg.mode == "restrict") {
-         
-            await browser.storage.local.set({
-            restrictedSites: restrictedSites,             
-          
-          });                    
+          await browser.storage.local.set({
+            restrictedSites: restrictedSites,
+          });
         }
 
         const timestamp = Date.now();
@@ -72,6 +85,20 @@ export default defineBackground(() => {
           duration: endedAt - startedAt,
         });
 
+        for(const i of activeRestrictedTabs){
+          const duration=endedAt-i.startedAt;
+          const host=restrictedUsage.find((item)=>item.restrictedHostname===i.restrictedHostname)
+          if(host){
+            host.duration+=duration
+          }else{
+            restrictedUsage.push({
+              restrictedHostname:i.restrictedHostname,
+              duration:duration
+            })
+          }   
+        }
+        activeRestrictedTabs.splice(0,activeRestrictedTabs.length);
+
         await browser.storage.local.set({
           isActive: false,
           mode: "",
@@ -95,9 +122,10 @@ export default defineBackground(() => {
           mode: result.mode,
         });
       }
-      //CHECK BLOCKED AND RESTRICTED SITES
+
+      // CHECK BLOCKED AND RESTRICTED SITES
       else if (msg.message === "check_site") {
-          
+        const tabId = sender.tab?.id;
         const result = (await browser.storage.local.get([
           "blockedSites",
           "restrictedSites",
@@ -115,6 +143,64 @@ export default defineBackground(() => {
           result.isActive &&
           result.restrictedSites?.includes(msg.hostname);
 
+        // RESTRICTED TIMER
+        if (isRestricted) {
+          const existing = activeRestrictedTabs.find(
+            (item) => item.tabId === tabId,
+          );
+
+          if (!existing) {
+            activeRestrictedTabs.push({
+              tabId: tabId!,
+              restrictedHostname: msg.hostname,
+              startedAt: Date.now(),
+              currDuration: 0,
+            });
+          } else if (existing.restrictedHostname !== msg.hostname) {
+            const exists = restrictedUsage.find(
+              (item) => item.restrictedHostname === existing.restrictedHostname,
+            );
+            if (exists) {
+              exists.duration += Date.now() - existing.startedAt;
+            } else {
+              restrictedUsage.push({
+                restrictedHostname: existing.restrictedHostname,
+                duration: Date.now() - existing.startedAt,
+              });
+            }
+            existing.restrictedHostname = msg.hostname;
+            existing.startedAt = Date.now();
+            existing.currDuration = 0;
+          }
+        } else {
+          const activeTab = activeRestrictedTabs.find(
+            (item) => item.tabId === tabId,
+          );
+
+          if (activeTab) {
+            const duration = Date.now() - activeTab.startedAt;
+
+            const existing = restrictedUsage.find(
+              (item) =>
+                item.restrictedHostname === activeTab.restrictedHostname,
+            );
+
+            if (existing) {
+              existing.duration += duration;
+            } else {
+              restrictedUsage.push({
+                restrictedHostname: activeTab.restrictedHostname,
+                duration: duration,
+              });
+            }
+
+            activeRestrictedTabs.splice(
+              activeRestrictedTabs.indexOf(activeTab),
+              1,
+            );
+          }
+        }
+
         sendResponse({
           isBlocked,
           isRestricted,
@@ -122,4 +208,28 @@ export default defineBackground(() => {
       }
     },
   );
+
+  // TAB CLOSE
+  browser.tabs.onRemoved.addListener((tabId) => {
+    const activeTab = activeRestrictedTabs.find((item) => item.tabId === tabId);
+
+    if (activeTab) {
+      const duration = Date.now() - activeTab.startedAt;
+
+      const existing = restrictedUsage.find(
+        (item) => item.restrictedHostname === activeTab.restrictedHostname,
+      );
+
+      if (existing) {
+        existing.duration += duration;
+      } else {
+        restrictedUsage.push({
+          restrictedHostname: activeTab.restrictedHostname,
+          duration: duration,
+        });
+      }
+
+      activeRestrictedTabs.splice(activeRestrictedTabs.indexOf(activeTab), 1);
+    }
+  });
 });
