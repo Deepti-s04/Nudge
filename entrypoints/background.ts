@@ -1,235 +1,315 @@
 interface Message {
   message: string;
-  mode: string;
+  mode?: string;
+  hostname?: string;
+}
+
+interface ActiveVisit {
   hostname: string;
+  startedAt: number;
 }
 
-interface Session {
-  mode: string;
-  duration: number;
-}
-
-interface StorageData {
-  isActive: boolean;
+interface SessionRecord {
   mode: string;
   startedAt: number;
-  sessions: Session[];
-}
-
-interface BlockedData {
-  blockedSites: string[];
-}
-
-interface RestrictedData {
-  restrictedSites: string[];
-  restrictedStartedAt: number;
-  restrictedHostname: string;
-}
-interface restrictedObject {
-  restrictedHostname: string;
+  endedAt: number;
   duration: number;
-}
-interface ActiveRestrictedTab {
-  tabId: number;
-  restrictedHostname: string;
-  startedAt: number;
-  currDuration: number;
+  siteUsage: Record<string, number>;
 }
 
-const activeRestrictedTabs: ActiveRestrictedTab[] = [];
+interface BackgroundData {
+  isActive?: boolean;
+  mode?: string;
+  startedAt?: number;
+  sessions?: SessionRecord[];
+  blockedSites?: string[];
+  restrictedSites?: string[];
+  activeVisits?: Record<string, ActiveVisit>;
+  sessionSiteUsage?: Record<string, number>;
+}
 
-const restrictedUsage: restrictedObject[] = [];
+const DEFAULT_BLOCKED_SITES = ["twitter.com"];
+const DEFAULT_RESTRICTED_SITES = ["youtube.com", "instagram.com"];
 
-export default defineBackground(() => {
-  let blockedSites = ["instagram.com"];
-  let restrictedSites = ["youtube.com"];
+function normalizeHost(host: string): string {
+  return host.toLowerCase().replace(/^www\./, "");
+}
 
-  browser.runtime.onMessage.addListener(
-    async (msg: Message, sender, sendResponse) => {
-      // START SESSION
-      if (msg.message === "start_session") {
-        if (msg.mode == "block") {
-          await browser.storage.local.set({
-            blockedSites: blockedSites,
-          });
-        } else if (msg.mode == "restrict") {
-          await browser.storage.local.set({
-            restrictedSites: restrictedSites,
-          });
-        }
+function matchesSite(hostname: string, sites: string[]): boolean {
+  const host = normalizeHost(hostname);
 
-        const timestamp = Date.now();
+  return sites.some((site) => {
+    const domain = normalizeHost(site);
+    return host === domain || host.endsWith(`.${domain}`);
+  });
+}
 
-        await browser.storage.local.set({
-          isActive: true,
-          mode: msg.mode,
-          startedAt: timestamp,
-        });
-      }
+function addUsage(
+  usage: Record<string, number>,
+  hostname: string,
+  duration: number,
+) {
+  if (duration <= 0) return;
 
-      // STOP SESSION
-      else if (msg.message === "stop_session") {
-        const result = (await browser.storage.local.get([
-          "startedAt",
-          "sessions",
-          "mode",
-        ])) as StorageData;
+  usage[hostname] = (usage[hostname] ?? 0) + duration;
+}
 
-        const startedAt = result.startedAt;
-        const endedAt = Date.now();
+let stateQueue: Promise<void> = Promise.resolve();
 
-        const sessions = result.sessions || [];
-
-        sessions.push({
-          mode: result.mode,
-          duration: endedAt - startedAt,
-        });
-
-        for(const i of activeRestrictedTabs){
-          const duration=endedAt-i.startedAt;
-          const host=restrictedUsage.find((item)=>item.restrictedHostname===i.restrictedHostname)
-          if(host){
-            host.duration+=duration
-          }else{
-            restrictedUsage.push({
-              restrictedHostname:i.restrictedHostname,
-              duration:duration
-            })
-          }   
-        }
-        activeRestrictedTabs.splice(0,activeRestrictedTabs.length);
-
-        await browser.storage.local.set({
-          isActive: false,
-          mode: "",
-          sessions: sessions,
-        });
-      }
-
-      // GET CURRENT SESSION
-      else if (msg.message === "get_session") {
-        const result = (await browser.storage.local.get([
-          "isActive",
-          "startedAt",
-          "mode",
-        ])) as StorageData;
-
-        const elapsedTime = result.isActive ? Date.now() - result.startedAt : 0;
-
-        sendResponse({
-          isActive: result.isActive,
-          elapsedTime: elapsedTime,
-          mode: result.mode,
-        });
-      }
-
-      // CHECK BLOCKED AND RESTRICTED SITES
-      else if (msg.message === "check_site") {
-        const tabId = sender.tab?.id;
-        const result = (await browser.storage.local.get([
-          "blockedSites",
-          "restrictedSites",
-          "isActive",
-          "mode",
-        ])) as BlockedData & StorageData & RestrictedData;
-
-        const isBlocked =
-          result.mode === "block" &&
-          result.isActive &&
-          result.blockedSites?.includes(msg.hostname);
-
-        const isRestricted =
-          result.mode === "restrict" &&
-          result.isActive &&
-          result.restrictedSites?.includes(msg.hostname);
-
-        // RESTRICTED TIMER
-        if (isRestricted) {
-          const existing = activeRestrictedTabs.find(
-            (item) => item.tabId === tabId,
-          );
-
-          if (!existing) {
-            activeRestrictedTabs.push({
-              tabId: tabId!,
-              restrictedHostname: msg.hostname,
-              startedAt: Date.now(),
-              currDuration: 0,
-            });
-          } else if (existing.restrictedHostname !== msg.hostname) {
-            const exists = restrictedUsage.find(
-              (item) => item.restrictedHostname === existing.restrictedHostname,
-            );
-            if (exists) {
-              exists.duration += Date.now() - existing.startedAt;
-            } else {
-              restrictedUsage.push({
-                restrictedHostname: existing.restrictedHostname,
-                duration: Date.now() - existing.startedAt,
-              });
-            }
-            existing.restrictedHostname = msg.hostname;
-            existing.startedAt = Date.now();
-            existing.currDuration = 0;
-          }
-        } else {
-          const activeTab = activeRestrictedTabs.find(
-            (item) => item.tabId === tabId,
-          );
-
-          if (activeTab) {
-            const duration = Date.now() - activeTab.startedAt;
-
-            const existing = restrictedUsage.find(
-              (item) =>
-                item.restrictedHostname === activeTab.restrictedHostname,
-            );
-
-            if (existing) {
-              existing.duration += duration;
-            } else {
-              restrictedUsage.push({
-                restrictedHostname: activeTab.restrictedHostname,
-                duration: duration,
-              });
-            }
-
-            activeRestrictedTabs.splice(
-              activeRestrictedTabs.indexOf(activeTab),
-              1,
-            );
-          }
-        }
-
-        sendResponse({
-          isBlocked,
-          isRestricted,
-        });
-      }
-    },
+function runSerial<T>(task: () => Promise<T>): Promise<T> {
+  const result = stateQueue.then(
+    () => task(),
+    () => task(),
   );
 
-  // TAB CLOSE
-  browser.tabs.onRemoved.addListener((tabId) => {
-    const activeTab = activeRestrictedTabs.find((item) => item.tabId === tabId);
+  stateQueue = result.then(
+    () => undefined,
+    () => undefined,
+  );
 
-    if (activeTab) {
-      const duration = Date.now() - activeTab.startedAt;
+  return result;
+}
 
-      const existing = restrictedUsage.find(
-        (item) => item.restrictedHostname === activeTab.restrictedHostname,
-      );
-
-      if (existing) {
-        existing.duration += duration;
-      } else {
-        restrictedUsage.push({
-          restrictedHostname: activeTab.restrictedHostname,
-          duration: duration,
-        });
+export default defineBackground(() => {
+  browser.runtime.onMessage.addListener((msg: Message, sender) =>
+  runSerial(async () => {
+    // START SESSION
+    if (msg.message === "start_session") {
+      if (msg.mode !== "block" && msg.mode !== "restrict") {
+        return { success: false, error: "Invalid session mode" };
       }
 
-      activeRestrictedTabs.splice(activeRestrictedTabs.indexOf(activeTab), 1);
+      const now = Date.now();
+
+      const stored = (await browser.storage.local.get([
+        "sessions",
+        "blockedSites",
+        "restrictedSites",
+        "isActive",
+      ])) as BackgroundData;
+
+      // Don't silently overwrite a running session.
+      if (stored.isActive) {
+        return { success: false, error: "A session is already active" };
+      }
+
+      await browser.storage.local.set({
+        blockedSites: stored.blockedSites ?? DEFAULT_BLOCKED_SITES,
+        restrictedSites: stored.restrictedSites ?? DEFAULT_RESTRICTED_SITES,
+        isActive: true,
+        mode: msg.mode,
+        startedAt: now,
+        activeVisits: {},
+        sessionSiteUsage: {},
+      });
+
+      return { success: true };
     }
-  });
+
+    // STOP SESSION
+    if (msg.message === "stop_session") {
+      const data = (await browser.storage.local.get([
+        "isActive",
+        "mode",
+        "startedAt",
+        "sessions",
+        "activeVisits",
+        "sessionSiteUsage",
+      ])) as BackgroundData;
+
+      if (!data.isActive || !data.startedAt) {
+        return { success: false, error: "No active session" };
+      }
+
+      const now = Date.now();
+      const usage = { ...(data.sessionSiteUsage ?? {}) };
+
+      // Finalize all visits that are still active.
+      for (const visit of Object.values(data.activeVisits ?? {})) {
+        addUsage(usage, visit.hostname, now - visit.startedAt);
+      }
+
+      const record: SessionRecord = {
+        mode: data.mode ?? "",
+        startedAt: data.startedAt,
+        endedAt: now,
+        duration: now - data.startedAt,
+        siteUsage: usage,
+      };
+
+      const sessions = [...(data.sessions ?? []), record];
+
+      await browser.storage.local.set({
+        isActive: false,
+        mode: "",
+        sessions,
+        activeVisits: {},
+        sessionSiteUsage: {},
+      });
+
+      return { success: true };
+    }
+
+    // GET CURRENT SESSION
+    if (msg.message === "get_session") {
+      console.log("MESSAGE RECEIVED:", msg);
+
+      const data = (await browser.storage.local.get([
+        "isActive",
+        "startedAt",
+        "mode",
+      ])) as BackgroundData;
+
+      return {
+        isActive: Boolean(data.isActive),
+        elapsedTime:
+          data.isActive && data.startedAt ? Date.now() - data.startedAt : 0,
+        mode: data.mode ?? "",
+      };
+    }
+
+    if (msg.message === "get_site_usage") {
+      const tabId = sender.tab?.id;
+      const hostname = normalizeHost(msg.hostname ?? "");
+
+      const data = (await browser.storage.local.get([
+        "activeVisits",
+        "sessionSiteUsage",
+      ])) as BackgroundData;
+
+      const usage = data.sessionSiteUsage ?? {};
+      const activeVisits = data.activeVisits ?? {};
+      const currentTabKey = tabId !== undefined ? String(tabId) : undefined;
+
+      const now = Date.now();
+      let otherTabsDuration = 0;
+
+      for (const [visitTabId, visit] of Object.entries(activeVisits)) {
+        if (visit.hostname === hostname && visitTabId !== currentTabKey) {
+          otherTabsDuration += Math.max(0, now - visit.startedAt);
+        }
+      }
+
+      return {
+        totalDuration: (usage[hostname] ?? 0) + otherTabsDuration,
+      };
+    }
+
+    // CHECK WHETHER THE CURRENT WEBSITE IS BLOCKED OR RESTRICTED
+    if (msg.message === "check_site") {
+      const tabId = sender.tab?.id;
+      const hostname = normalizeHost(msg.hostname ?? "");
+
+      const data = (await browser.storage.local.get([
+        "blockedSites",
+        "restrictedSites",
+        "isActive",
+        "mode",
+        "activeVisits",
+        "sessionSiteUsage",
+      ])) as BackgroundData;
+
+      const blockedSites = data.blockedSites ?? DEFAULT_BLOCKED_SITES;
+      const restrictedSites = data.restrictedSites ?? DEFAULT_RESTRICTED_SITES;
+
+      const isBlocked =
+        Boolean(data.isActive) &&
+        data.mode === "block" &&
+        matchesSite(hostname, blockedSites);
+
+      const isRestricted =
+        Boolean(data.isActive) &&
+        data.mode === "restrict" &&
+        matchesSite(hostname, restrictedSites);
+
+      const activeVisits = { ...(data.activeVisits ?? {}) };
+      const usage = { ...(data.sessionSiteUsage ?? {}) };
+      const now = Date.now();
+
+      let currentDuration = 0;
+
+      if (tabId !== undefined) {
+        const key = String(tabId);
+        const existing = activeVisits[key];
+
+        // Finalize the previous visit when leaving its website.
+        if (existing && (!isRestricted || existing.hostname !== hostname)) {
+          addUsage(usage, existing.hostname, now - existing.startedAt);
+          delete activeVisits[key];
+        }
+
+        // Start or continue this tab's current restricted visit.
+        if (isRestricted) {
+          if (!activeVisits[key]) {
+            activeVisits[key] = {
+              hostname,
+              startedAt: now,
+            };
+          }
+
+          currentDuration = Math.max(0, now - activeVisits[key].startedAt);
+        }
+      }
+
+      // Persist updated usage and active visits.
+      await browser.storage.local.set({
+        activeVisits,
+        sessionSiteUsage: usage,
+      });
+
+      const saved = await browser.storage.local.get([
+        "activeVisits",
+        "sessionSiteUsage",
+      ]);
+
+      console.log("SAVED USAGE:", saved.sessionSiteUsage);
+      console.log("ACTIVE VISITS:", saved.activeVisits);
+
+      let otherTabsDuration = 0;
+      const currentTabKey = tabId !== undefined ? String(tabId) : undefined;
+
+      for (const [visitTabId, visit] of Object.entries(activeVisits)) {
+        if (visit.hostname === hostname && visitTabId !== currentTabKey) {
+          const duration = Math.max(0, now - visit.startedAt);
+          otherTabsDuration += duration;
+        }
+      }
+
+      return {
+        isBlocked,
+        isRestricted,
+        currentDuration,
+        totalDuration: (usage[hostname] ?? 0) + otherTabsDuration,
+      };
+    }
+    }),
+);
+  // FINALIZE A VISIT WHEN ITS TAB CLOSES
+ browser.tabs.onRemoved.addListener((tabId) =>
+  runSerial(async () => {
+    const data = (await browser.storage.local.get([
+      "activeVisits",
+      "sessionSiteUsage",
+      "isActive",
+    ])) as BackgroundData;
+
+    const activeVisits = { ...(data.activeVisits ?? {}) };
+    const usage = { ...(data.sessionSiteUsage ?? {}) };
+    const key = String(tabId);
+    const visit = activeVisits[key];
+
+    if (!visit) return;
+
+    if (data.isActive) {
+      addUsage(usage, visit.hostname, Date.now() - visit.startedAt);
+    }
+
+    delete activeVisits[key];
+
+    await browser.storage.local.set({
+      activeVisits,
+      sessionSiteUsage: usage,
+    });
+   }),
+);
 });

@@ -1,4 +1,3 @@
-
 export default defineContentScript({
   matches: ["<all_urls>"],
 
@@ -8,7 +7,10 @@ export default defineContentScript({
       const minutes = Math.floor((duration / 60000) % 60);
       const hours = Math.floor(duration / 3600000);
 
-      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
+        2,
+        "0",
+      )}:${String(seconds).padStart(2, "0")}`;
     }
 
     const hostname = window.location.hostname.replace(/^www\./, "");
@@ -17,9 +19,11 @@ export default defineContentScript({
     const distBar = document.createElement("div");
     const warning = document.createElement("h1");
     const timer = document.createElement("p");
+    const totalTimer = document.createElement("p");
 
     distBar.appendChild(warning);
     distBar.appendChild(timer);
+    distBar.appendChild(totalTimer);
 
     distBar.style.position = "fixed";
     distBar.style.top = "0";
@@ -31,11 +35,17 @@ export default defineContentScript({
     distBar.style.display = "none";
     distBar.style.alignItems = "center";
     distBar.style.justifyContent = "space-between";
+    distBar.style.gap = "16px";
     distBar.style.padding = "0 20px";
     distBar.style.boxSizing = "border-box";
     distBar.style.zIndex = "999999";
 
     warning.textContent = "You've been distracted";
+    timer.textContent = "00:00:00";
+    totalTimer.textContent = "Previous total: 00:00:00";
+
+    totalTimer.style.fontSize = "12px";
+    totalTimer.style.whiteSpace = "nowrap";
 
     document.body.appendChild(distBar);
 
@@ -93,39 +103,55 @@ export default defineContentScript({
     document.body.appendChild(divv);
     document.body.appendChild(icon);
 
-    let restrictedStartedAt = 0;
+    // TIMER AND STATE VARIABLES
+    let restrictedVisitStartedAt = 0;
+    let totalDuration = 0;
+    let isRestrictedPage = false;
     let isChecking = false;
     let pageBlocked = false;
 
-    // Check current website and initialize its timer.
+    // CHECK CURRENT WEBSITE
     const checkSite = async () => {
       if (isChecking || pageBlocked) return;
 
       isChecking = true;
 
       try {
+        console.log("CONTENT URL:", window.location.href);
+        console.log("CONTENT HOSTNAME:", window.location.hostname);
         const response = await browser.runtime.sendMessage({
           message: "check_site",
-          hostname: window.location.hostname.replace(/^www\./, ""),
+          hostname,
         });
 
         if (response?.isBlocked) {
           pageBlocked = true;
 
           document.body.innerHTML =
-            "<h1>Welcome</h1><p>This is blocked because of Nudge focus session.</p>";
+            "<h1>Fckin go back to studying</h1><p>This is blocked because of Nudge focus session.</p>";
 
           return;
         }
 
-        if (
-          response?.isRestricted &&
-          response.restrictedStartedAt
-        ) {
-          restrictedStartedAt = response.restrictedStartedAt;
+        if (response?.isRestricted) {
+          isRestrictedPage = true;
+
+          const currentDuration = response.currentDuration ?? 0;
+          totalDuration = response.totalDuration ?? 0;
+
+          // Convert elapsed time into a timestamp for the live timer.
+          restrictedVisitStartedAt = Date.now() - currentDuration;
+
           distBar.style.display = "flex";
+          timer.textContent = msToTime(currentDuration);
+          totalTimer.textContent = `(This session: ${msToTime(totalDuration + currentDuration)})`;
         } else {
-          restrictedStartedAt = 0;
+          isRestrictedPage = false;
+          restrictedVisitStartedAt = 0;
+          totalDuration = 0;
+
+          timer.textContent = "00:00:00";
+          totalTimer.textContent = "Previous total: 00:00:00";
           distBar.style.display = "none";
         }
       } catch (error) {
@@ -134,10 +160,16 @@ export default defineContentScript({
         isChecking = false;
       }
     };
+    let isGettingSession = false;
 
-    // Overall focus session timer.
+    // UPDATE SESSION AND WEBSITE TIMERS
     const getSession = async () => {
-      try {
+  if (isGettingSession) return;
+
+  isGettingSession = true;
+  console.time("getSession");
+
+  try {
         const response = await browser.runtime.sendMessage({
           message: "get_session",
         });
@@ -146,53 +178,80 @@ export default defineContentScript({
           p1.textContent = "00:00:00";
           p2.textContent = "Mode: ";
 
-          restrictedStartedAt = 0;
+          isRestrictedPage = false;
+          restrictedVisitStartedAt = 0;
+          totalDuration = 0;
           distBar.style.display = "none";
 
           return;
         }
 
-        p1.textContent = msToTime(response.elapsedTime);
+        p1.textContent = msToTime(response.elapsedTime ?? 0);
         p2.textContent = `Mode: ${response.mode || ""}`;
 
-        // Restricted bar should only run in restrict mode.
+        // BLOCK MODE: enforce the blocked-sites list.
+        if (response.mode === "block") {
+          isRestrictedPage = false;
+          restrictedVisitStartedAt = 0;
+          totalDuration = 0;
+          distBar.style.display = "none";
+
+          await checkSite();
+          return;
+        }
+
+        // Hide the distraction bar for any other non-restrict mode.
         if (response.mode !== "restrict") {
-          restrictedStartedAt = 0;
+          isRestrictedPage = false;
+          restrictedVisitStartedAt = 0;
+          totalDuration = 0;
           distBar.style.display = "none";
           return;
         }
 
-        // Initialize a new restricted timer if needed.
-        if (!restrictedStartedAt) {
+        // RESTRICT MODE
+        if (!isRestrictedPage) {
           await checkSite();
         }
 
-        if (restrictedStartedAt) {
-          timer.textContent = msToTime(
-            Date.now() - restrictedStartedAt
-          );
+        if (isRestrictedPage && restrictedVisitStartedAt) {
+          const currentDuration = Date.now() - restrictedVisitStartedAt;
+
+          const usageResponse = await browser.runtime.sendMessage({
+            message: "get_site_usage",
+            hostname,
+          });
+
+          totalDuration = usageResponse?.totalDuration ?? totalDuration;
+
+          timer.textContent = msToTime(currentDuration);
+          totalTimer.textContent = `(This session: ${msToTime(totalDuration + currentDuration)})`;
         }
       } catch (error) {
         console.error("Nudge get_session error:", error);
-      }
+      } finally {
+  isGettingSession = false;
+  console.timeEnd("getSession");
+}
     };
 
-    // Initialize both timers.
-    void checkSite();
+    // INITIALIZE
     void getSession();
 
-    // Update once per second.
+    // UPDATE EVERY SECOND
     setInterval(() => {
       void getSession();
     }, 1000);
 
-    // Handle session changes immediately.
+    // REACT TO SESSION START/STOP OR MODE CHANGES
     browser.storage.onChanged.addListener((changes, area) => {
       if (area !== "local") return;
 
       if (changes.isActive || changes.mode) {
-        restrictedStartedAt = 0;
-        void checkSite();
+        isRestrictedPage = false;
+        restrictedVisitStartedAt = 0;
+        totalDuration = 0;
+
         void getSession();
       }
     });
