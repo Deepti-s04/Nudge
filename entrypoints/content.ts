@@ -39,7 +39,7 @@ export default defineContentScript({
     distBar.style.gap = "16px";
     distBar.style.padding = "0 24px";
     distBar.style.boxSizing = "border-box";
-    distBar.style.zIndex = "2147483647"; // Max z-index
+    distBar.style.zIndex = "2147483647"; // Ensure highest stacking context
     distBar.style.fontFamily = "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 
     warning.textContent = "You've been distracted";
@@ -54,6 +54,7 @@ export default defineContentScript({
     timer.style.fontWeight = "bold";
     timer.style.margin = "0";
     timer.style.padding = "0";
+    timer.style.textAlign = "center";
     timer.style.whiteSpace = "nowrap";
     timer.style.letterSpacing = "0.5px";
 
@@ -138,12 +139,12 @@ export default defineContentScript({
     // 3. STATE VARIABLES
     let isRestrictedPage = false;
     let pageBlocked = false;
-    let visitStartedAt = 0;
-    let baseTotalDuration = 0;
-    let sessionStartedAt = 0;
+    let visitStartedAt = 0;       // Anchored start timestamp of this visit
+    let baseTotalDuration = 0;    // Total duration from past visits + other tabs
+    let sessionStartedAt = 0;     // Anchored start timestamp of the entire focus session
     let isSyncing = false;
 
-    // 4. REAL-TIME LOCAL TIMER DISPLAY (Runs every 200ms so seconds roll over instantaneously)
+    // 4. REAL-TIME LOCAL TIMER DISPLAY (Runs every 200ms - strictly monotonic, never jumps backwards)
     const updateDisplayTimers = () => {
       const now = Date.now();
 
@@ -184,13 +185,9 @@ export default defineContentScript({
           return;
         }
 
-        // Anchor session timer if not set or if drifted by > 2s
-        const remoteSessionElapsed = response.sessionElapsedTime ?? 0;
-        if (
-          sessionStartedAt === 0 ||
-          Math.abs((Date.now() - sessionStartedAt) - remoteSessionElapsed) > 2000
-        ) {
-          sessionStartedAt = Date.now() - remoteSessionElapsed;
+        // Anchor session timer if not already set
+        if (sessionStartedAt === 0) {
+          sessionStartedAt = Date.now() - (response.sessionElapsedTime ?? 0);
         }
         p2.textContent = `Mode: ${response.mode || ""}`;
 
@@ -208,14 +205,11 @@ export default defineContentScript({
           isRestrictedPage = true;
           baseTotalDuration = response.baseTotalDuration ?? 0;
 
-          const remoteCurrent = response.currentDuration ?? 0;
-          // Anchor visitStartedAt on first sync, or reconcile if drifted significantly (> 2.5s)
-          // Preserving visitStartedAt ensures the visit timer is NEVER reset to 0 mid-visit!
-          if (
-            visitStartedAt === 0 ||
-            Math.abs((Date.now() - visitStartedAt) - remoteCurrent) > 2500
-          ) {
-            visitStartedAt = Date.now() - remoteCurrent;
+          // Anchor visitStartedAt ONLY on initial load or refresh (when visitStartedAt is 0).
+          // Once anchored, NEVER overwrite it while the tab is active on this page.
+          // This guarantees the timer NEVER jumps backwards or jitters!
+          if (visitStartedAt === 0) {
+            visitStartedAt = Date.now() - (response.currentDuration ?? 0);
           }
 
           distBar.style.display = "flex";
@@ -237,15 +231,15 @@ export default defineContentScript({
     // 6. INITIALIZE IMMEDIATELY
     void syncSite();
 
-    // 7. ULTRA-SMOOTH UI TICK (200ms) - Exact, snappy 1-second roll-overs
+    // 7. ULTRA-SMOOTH LOCAL DISPLAY TICK (200ms) - Strictly monotonic and instant
     setInterval(updateDisplayTimers, 200);
 
-    // 8. PERIODIC BACKGROUND SYNC (Every 2 seconds) - Keeps other tabs and storage in sync
+    // 8. PERIODIC BACKGROUND SYNC (Every 2 seconds) - Refreshes base total and session state
     setInterval(() => {
       void syncSite();
     }, 2000);
 
-    // 9. RE-SYNC IMMEDIATELY WHEN TAB BECOMES ACTIVE
+    // 9. RE-SYNC ON TAB VISIBILITY CHANGE
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") {
         void syncSite();
@@ -257,6 +251,9 @@ export default defineContentScript({
       if (area !== "local") return;
 
       if (changes.isActive || changes.mode) {
+        // Reset local anchors so fresh state is loaded cleanly
+        visitStartedAt = 0;
+        sessionStartedAt = 0;
         void syncSite();
       }
     });

@@ -317,7 +317,7 @@ export default defineBackground(() => {
           }
         }
 
-        // Only write to disk if an active visit was created or finalized (prevents 1s disk thrashing)
+        // Only write to disk if an active visit was created or finalized
         if (hasStateChange) {
           await browser.storage.local.set({
             activeVisits,
@@ -374,12 +374,13 @@ export default defineBackground(() => {
     }),
   );
 
-  // FINALIZE A VISIT WHEN A TAB NAVIGATES AWAY (covers internal pages like chrome://newtab)
-  browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
-    if (!changeInfo.url) return;
+  // FINALIZE A VISIT WHEN A TAB NAVIGATES AWAY (checks tab.url to avoid false triggers on sub-assets)
+  browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    // Only inspect top-level navigation changes
+    if (!changeInfo.url || !tab.url) return;
 
-    const newHost = safeExtractHost(changeInfo.url);
-    if (!newHost) return;
+    const topHost = safeExtractHost(tab.url);
+    if (!topHost) return;
 
     runSerial(async () => {
       const data = (await browser.storage.local.get([
@@ -400,9 +401,9 @@ export default defineBackground(() => {
         visit.domain ||
         findMatchingSite(visit.hostname, restrictedSites) ||
         normalizeHost(visit.hostname);
-      const newDomain = findMatchingSite(newHost, restrictedSites);
+      const newDomain = findMatchingSite(topHost, restrictedSites);
 
-      // If the tab navigated away to another domain or unrestricted site, finalize its visit
+      // If the top-level tab navigated away to another domain or unrestricted site, finalize its visit
       if (newDomain !== visitDomain) {
         const activeVisits = { ...(data.activeVisits ?? {}) };
         const usage = { ...(data.sessionSiteUsage ?? {}) };
