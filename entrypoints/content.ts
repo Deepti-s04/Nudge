@@ -6,7 +6,7 @@ export default defineContentScript({
       const s = Math.max(0, totalSec);
       const seconds = s % 60;
       const minutes = Math.floor(s / 60) % 60;
-      const hours = Math.floor(s / 3600);
+      const hours = Math.floor(totalSec / 3600);
 
       return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
         2,
@@ -144,28 +144,38 @@ export default defineContentScript({
     let sessionStartedAt = 0;     // Anchored start timestamp of the entire focus session
     let isSyncing = false;
 
-    // 4. REAL-TIME LOCAL TIMER DISPLAY (Locked in exact 1.000s unison - never updates prematurely)
+    // Cache last displayed whole seconds to guarantee EXACTLY ONE update per second
+    let lastVisitSec = -1;
+    let lastSessionSec = -1;
+
+    // 4. REAL-TIME LOCAL TIMER DISPLAY (Ticks exactly ONCE per second - no double updates)
     const updateDisplayTimers = () => {
       const now = Date.now();
 
+      // Session Timer (Bottom-Right Panel)
       if (sessionStartedAt > 0) {
         const sessionElapsedSec = Math.max(0, Math.floor((now - sessionStartedAt) / 1000));
-        p1.textContent = formatSeconds(sessionElapsedSec);
+        if (sessionElapsedSec !== lastSessionSec) {
+          lastSessionSec = sessionElapsedSec;
+          p1.textContent = formatSeconds(sessionElapsedSec);
+        }
       }
 
+      // Distraction Bar Timers (Middle and Corner)
       if (isRestrictedPage && visitStartedAt > 0) {
-        // Compute whole elapsed seconds of current visit
         const currentVisitSec = Math.max(0, Math.floor((now - visitStartedAt) / 1000));
 
-        // Compute whole seconds of previous usage
-        const baseTotalSec = Math.max(0, Math.floor(baseTotalDuration / 1000));
+        // Only update the DOM when a whole second actually changes
+        if (currentVisitSec !== lastVisitSec) {
+          lastVisitSec = currentVisitSec;
 
-        // Total site seconds is exactly base + current:
-        // Because they share currentVisitSec, totalTimer and timer roll over at the EXACT same millisecond!
-        const totalSiteSec = baseTotalSec + currentVisitSec;
+          const baseTotalSec = Math.max(0, Math.floor(baseTotalDuration / 1000));
+          const totalSiteSec = baseTotalSec + currentVisitSec;
 
-        timer.textContent = formatSeconds(currentVisitSec);
-        totalTimer.textContent = `(This session: ${formatSeconds(totalSiteSec)})`;
+          // Both middle and corner timers update at the EXACT SAME INSTANT, exactly once per second
+          timer.textContent = formatSeconds(currentVisitSec);
+          totalTimer.textContent = `(This session: ${formatSeconds(totalSiteSec)})`;
+        }
       }
     };
 
@@ -185,6 +195,8 @@ export default defineContentScript({
           visitStartedAt = 0;
           baseTotalDuration = 0;
           sessionStartedAt = 0;
+          lastVisitSec = -1;
+          lastSessionSec = -1;
 
           distBar.style.display = "none";
           p1.textContent = "00:00:00";
@@ -195,6 +207,7 @@ export default defineContentScript({
         // Anchor session timer if not already set
         if (sessionStartedAt === 0) {
           sessionStartedAt = Date.now() - (response.sessionElapsedTime ?? 0);
+          lastSessionSec = -1;
         }
         p2.textContent = `Mode: ${response.mode || ""}`;
 
@@ -210,12 +223,16 @@ export default defineContentScript({
         // Restrict Mode
         if (response.isRestricted) {
           isRestrictedPage = true;
-          baseTotalDuration = response.baseTotalDuration ?? 0;
 
-          // Anchor visitStartedAt ONLY on initial load or refresh (when visitStartedAt is 0).
-          // Once anchored, NEVER overwrite it while on this page so timer runs smoothly.
+          // Anchor visitStartedAt & baseTotalDuration on initial load or refresh
           if (visitStartedAt === 0) {
             visitStartedAt = Date.now() - (response.currentDuration ?? 0);
+            baseTotalDuration = response.baseTotalDuration ?? 0;
+            lastVisitSec = -1; // Force immediate initial paint
+          } else if ((response.baseTotalDuration ?? 0) > baseTotalDuration) {
+            // If another tab finalized usage, update base without resetting current visit
+            baseTotalDuration = response.baseTotalDuration;
+            lastVisitSec = -1;
           }
 
           distBar.style.display = "flex";
@@ -224,6 +241,7 @@ export default defineContentScript({
           isRestrictedPage = false;
           visitStartedAt = 0;
           baseTotalDuration = 0;
+          lastVisitSec = -1;
           distBar.style.display = "none";
           updateDisplayTimers();
         }
@@ -237,13 +255,13 @@ export default defineContentScript({
     // 6. INITIALIZE IMMEDIATELY
     void syncSite();
 
-    // 7. ULTRA-SMOOTH LOCAL DISPLAY TICK (200ms) - Exact, synchronized roll-overs
-    setInterval(updateDisplayTimers, 200);
+    // 7. ULTRA-SMOOTH LOCAL DISPLAY TICK (250ms interval catches second roll-overs with zero drift)
+    setInterval(updateDisplayTimers, 250);
 
-    // 8. PERIODIC BACKGROUND SYNC (Every 2 seconds) - Refreshes base total and session state
+    // 8. PERIODIC BACKGROUND SYNC (Every 3 seconds) - Lightweight background state check
     setInterval(() => {
       void syncSite();
-    }, 2000);
+    }, 3000);
 
     // 9. RE-SYNC ON TAB VISIBILITY CHANGE
     document.addEventListener("visibilitychange", () => {
@@ -259,6 +277,8 @@ export default defineContentScript({
       if (changes.isActive || changes.mode) {
         visitStartedAt = 0;
         sessionStartedAt = 0;
+        lastVisitSec = -1;
+        lastSessionSec = -1;
         void syncSite();
       }
     });
