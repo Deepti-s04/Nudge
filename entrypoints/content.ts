@@ -2,11 +2,11 @@ export default defineContentScript({
   matches: ["<all_urls>"],
 
   main() {
-    function msToTime(duration: number) {
-      const totalSec = Math.max(0, Math.floor(duration / 1000));
-      const seconds = totalSec % 60;
-      const minutes = Math.floor(totalSec / 60) % 60;
-      const hours = Math.floor(totalSec / 3600);
+    function formatSeconds(totalSec: number) {
+      const s = Math.max(0, totalSec);
+      const seconds = s % 60;
+      const minutes = Math.floor(s / 60) % 60;
+      const hours = Math.floor(s / 3600);
 
       return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
         2,
@@ -140,25 +140,32 @@ export default defineContentScript({
     let isRestrictedPage = false;
     let pageBlocked = false;
     let visitStartedAt = 0;       // Anchored start timestamp of this visit
-    let baseTotalDuration = 0;    // Total duration from past visits + other tabs
+    let baseTotalDuration = 0;    // Total duration from past visits + other tabs (ms)
     let sessionStartedAt = 0;     // Anchored start timestamp of the entire focus session
     let isSyncing = false;
 
-    // 4. REAL-TIME LOCAL TIMER DISPLAY (Runs every 200ms - strictly monotonic, never jumps backwards)
+    // 4. REAL-TIME LOCAL TIMER DISPLAY (Locked in exact 1.000s unison - never updates prematurely)
     const updateDisplayTimers = () => {
       const now = Date.now();
 
       if (sessionStartedAt > 0) {
-        const sessionElapsed = Math.max(0, now - sessionStartedAt);
-        p1.textContent = msToTime(sessionElapsed);
+        const sessionElapsedSec = Math.max(0, Math.floor((now - sessionStartedAt) / 1000));
+        p1.textContent = formatSeconds(sessionElapsedSec);
       }
 
       if (isRestrictedPage && visitStartedAt > 0) {
-        const currentVisit = Math.max(0, now - visitStartedAt);
-        const totalSite = baseTotalDuration + currentVisit;
+        // Compute whole elapsed seconds of current visit
+        const currentVisitSec = Math.max(0, Math.floor((now - visitStartedAt) / 1000));
 
-        timer.textContent = msToTime(currentVisit);
-        totalTimer.textContent = `(This session: ${msToTime(totalSite)})`;
+        // Compute whole seconds of previous usage
+        const baseTotalSec = Math.max(0, Math.floor(baseTotalDuration / 1000));
+
+        // Total site seconds is exactly base + current:
+        // Because they share currentVisitSec, totalTimer and timer roll over at the EXACT same millisecond!
+        const totalSiteSec = baseTotalSec + currentVisitSec;
+
+        timer.textContent = formatSeconds(currentVisitSec);
+        totalTimer.textContent = `(This session: ${formatSeconds(totalSiteSec)})`;
       }
     };
 
@@ -206,8 +213,7 @@ export default defineContentScript({
           baseTotalDuration = response.baseTotalDuration ?? 0;
 
           // Anchor visitStartedAt ONLY on initial load or refresh (when visitStartedAt is 0).
-          // Once anchored, NEVER overwrite it while the tab is active on this page.
-          // This guarantees the timer NEVER jumps backwards or jitters!
+          // Once anchored, NEVER overwrite it while on this page so timer runs smoothly.
           if (visitStartedAt === 0) {
             visitStartedAt = Date.now() - (response.currentDuration ?? 0);
           }
@@ -231,7 +237,7 @@ export default defineContentScript({
     // 6. INITIALIZE IMMEDIATELY
     void syncSite();
 
-    // 7. ULTRA-SMOOTH LOCAL DISPLAY TICK (200ms) - Strictly monotonic and instant
+    // 7. ULTRA-SMOOTH LOCAL DISPLAY TICK (200ms) - Exact, synchronized roll-overs
     setInterval(updateDisplayTimers, 200);
 
     // 8. PERIODIC BACKGROUND SYNC (Every 2 seconds) - Refreshes base total and session state
@@ -251,7 +257,6 @@ export default defineContentScript({
       if (area !== "local") return;
 
       if (changes.isActive || changes.mode) {
-        // Reset local anchors so fresh state is loaded cleanly
         visitStartedAt = 0;
         sessionStartedAt = 0;
         void syncSite();
