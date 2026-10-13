@@ -3,9 +3,10 @@ export default defineContentScript({
 
   main() {
     function msToTime(duration: number) {
-      const seconds = Math.floor((duration / 1000) % 60);
-      const minutes = Math.floor((duration / 60000) % 60);
-      const hours = Math.floor(duration / 3600000);
+      const totalSec = Math.max(0, Math.floor(duration / 1000));
+      const seconds = totalSec % 60;
+      const minutes = Math.floor(totalSec / 60) % 60;
+      const hours = Math.floor(totalSec / 3600);
 
       return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
         2,
@@ -15,7 +16,7 @@ export default defineContentScript({
 
     const hostname = window.location.hostname.replace(/^www\./, "");
 
-    // DISTRACTION BAR
+    // 1. DISTRACTION BAR
     const distBar = document.createElement("div");
     const warning = document.createElement("h1");
     const timer = document.createElement("p");
@@ -36,20 +37,36 @@ export default defineContentScript({
     distBar.style.alignItems = "center";
     distBar.style.justifyContent = "space-between";
     distBar.style.gap = "16px";
-    distBar.style.padding = "0 20px";
+    distBar.style.padding = "0 24px";
     distBar.style.boxSizing = "border-box";
-    distBar.style.zIndex = "999999";
+    distBar.style.zIndex = "2147483647"; // Max z-index
+    distBar.style.fontFamily = "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 
     warning.textContent = "You've been distracted";
-    timer.textContent = "00:00:00";
-    totalTimer.textContent = "Previous total: 00:00:00";
+    warning.style.fontSize = "16px";
+    warning.style.fontWeight = "600";
+    warning.style.margin = "0";
+    warning.style.padding = "0";
+    warning.style.whiteSpace = "nowrap";
 
-    totalTimer.style.fontSize = "12px";
+    timer.textContent = "00:00:00";
+    timer.style.fontSize = "18px";
+    timer.style.fontWeight = "bold";
+    timer.style.margin = "0";
+    timer.style.padding = "0";
+    timer.style.whiteSpace = "nowrap";
+    timer.style.letterSpacing = "0.5px";
+
+    totalTimer.textContent = "(This session: 00:00:00)";
+    totalTimer.style.fontSize = "13px";
+    totalTimer.style.margin = "0";
+    totalTimer.style.padding = "0";
     totalTimer.style.whiteSpace = "nowrap";
+    totalTimer.style.opacity = "0.9";
 
     document.body.appendChild(distBar);
 
-    // FLOATING NUDGE PANEL
+    // 2. FLOATING NUDGE PANEL
     const divv = document.createElement("div");
     const div2 = document.createElement("div");
     const heading = document.createElement("h3");
@@ -58,6 +75,18 @@ export default defineContentScript({
     const icon = document.createElement("div");
 
     heading.textContent = "Nudge";
+    heading.style.fontWeight = "bold";
+    heading.style.marginBottom = "8px";
+    heading.style.fontSize = "16px";
+
+    p1.textContent = "00:00:00";
+    p1.style.fontSize = "18px";
+    p1.style.fontWeight = "600";
+    p1.style.marginBottom = "4px";
+
+    p2.textContent = "Mode: ";
+    p2.style.fontSize = "12px";
+    p2.style.color = "#a1a1aa";
 
     div2.appendChild(heading);
     div2.appendChild(p1);
@@ -68,29 +97,32 @@ export default defineContentScript({
     div2.style.bottom = "60px";
     div2.style.right = "10px";
     div2.style.width = "150px";
-    div2.style.height = "200px";
+    div2.style.height = "130px";
     div2.style.background = "#18181b";
     div2.style.color = "white";
     div2.style.borderRadius = "12px";
     div2.style.padding = "16px";
     div2.style.display = "none";
-    div2.style.zIndex = "999999";
+    div2.style.zIndex = "2147483647";
+    div2.style.boxShadow = "0 4px 12px rgba(0,0,0,0.4)";
+    div2.style.fontFamily = "system-ui, -apple-system, sans-serif";
 
     icon.innerText = "N";
-
     icon.style.position = "fixed";
     icon.style.bottom = "20px";
     icon.style.right = "20px";
-    icon.style.width = "50px";
-    icon.style.height = "50px";
+    icon.style.width = "40px";
+    icon.style.height = "40px";
     icon.style.background = "black";
     icon.style.color = "white";
     icon.style.borderRadius = "50%";
     icon.style.display = "flex";
     icon.style.alignItems = "center";
     icon.style.justifyContent = "center";
-    icon.style.zIndex = "999999";
+    icon.style.zIndex = "2147483647";
     icon.style.cursor = "pointer";
+    icon.style.fontWeight = "bold";
+    icon.style.boxShadow = "0 2px 8px rgba(0,0,0,0.3)";
 
     icon.addEventListener("mouseenter", () => {
       div2.style.display = "block";
@@ -103,156 +135,129 @@ export default defineContentScript({
     document.body.appendChild(divv);
     document.body.appendChild(icon);
 
-    // TIMER AND STATE VARIABLES
-    let restrictedVisitStartedAt = 0;
-    let totalDuration = 0;
+    // 3. STATE VARIABLES
     let isRestrictedPage = false;
-    let isChecking = false;
     let pageBlocked = false;
+    let visitStartedAt = 0;
+    let baseTotalDuration = 0;
+    let sessionStartedAt = 0;
+    let isSyncing = false;
 
-    // CHECK CURRENT WEBSITE
-    const checkSite = async () => {
-      if (isChecking || pageBlocked) return;
+    // 4. REAL-TIME LOCAL TIMER DISPLAY (Runs every 200ms so seconds roll over instantaneously)
+    const updateDisplayTimers = () => {
+      const now = Date.now();
 
-      isChecking = true;
+      if (sessionStartedAt > 0) {
+        const sessionElapsed = Math.max(0, now - sessionStartedAt);
+        p1.textContent = msToTime(sessionElapsed);
+      }
+
+      if (isRestrictedPage && visitStartedAt > 0) {
+        const currentVisit = Math.max(0, now - visitStartedAt);
+        const totalSite = baseTotalDuration + currentVisit;
+
+        timer.textContent = msToTime(currentVisit);
+        totalTimer.textContent = `(This session: ${msToTime(totalSite)})`;
+      }
+    };
+
+    // 5. ATOMIC SYNC WITH BACKGROUND SCRIPT
+    const syncSite = async () => {
+      if (isSyncing || pageBlocked) return;
+      isSyncing = true;
 
       try {
-        console.log("CONTENT URL:", window.location.href);
-        console.log("CONTENT HOSTNAME:", window.location.hostname);
         const response = await browser.runtime.sendMessage({
           message: "check_site",
           hostname,
         });
 
-        if (response?.isBlocked) {
-          pageBlocked = true;
-
-          document.body.innerHTML =
-            "<h1>Fckin go back to studying</h1><p>This is blocked because of Nudge focus session.</p>";
-
-          return;
-        }
-
-        if (response?.isRestricted) {
-          isRestrictedPage = true;
-
-          const currentDuration = response.currentDuration ?? 0;
-          totalDuration = response.totalDuration ?? 0;
-
-          // Convert elapsed time into a timestamp for the live timer.
-          restrictedVisitStartedAt = Date.now() - currentDuration;
-
-          distBar.style.display = "flex";
-          timer.textContent = msToTime(currentDuration);
-          totalTimer.textContent = `(This session: ${msToTime(totalDuration + currentDuration)})`;
-        } else {
+        if (!response || !response.isActive) {
           isRestrictedPage = false;
-          restrictedVisitStartedAt = 0;
-          totalDuration = 0;
+          visitStartedAt = 0;
+          baseTotalDuration = 0;
+          sessionStartedAt = 0;
 
-          timer.textContent = "00:00:00";
-          totalTimer.textContent = "Previous total: 00:00:00";
           distBar.style.display = "none";
-        }
-      } catch (error) {
-        console.error("Nudge check_site error:", error);
-      } finally {
-        isChecking = false;
-      }
-    };
-    let isGettingSession = false;
-
-    // UPDATE SESSION AND WEBSITE TIMERS
-    const getSession = async () => {
-  if (isGettingSession) return;
-
-  isGettingSession = true;
-  console.time("getSession");
-
-  try {
-        const response = await browser.runtime.sendMessage({
-          message: "get_session",
-        });
-
-        if (!response?.isActive) {
           p1.textContent = "00:00:00";
           p2.textContent = "Mode: ";
-
-          isRestrictedPage = false;
-          restrictedVisitStartedAt = 0;
-          totalDuration = 0;
-          distBar.style.display = "none";
-
           return;
         }
 
-        p1.textContent = msToTime(response.elapsedTime ?? 0);
+        // Anchor session timer if not set or if drifted by > 2s
+        const remoteSessionElapsed = response.sessionElapsedTime ?? 0;
+        if (
+          sessionStartedAt === 0 ||
+          Math.abs((Date.now() - sessionStartedAt) - remoteSessionElapsed) > 2000
+        ) {
+          sessionStartedAt = Date.now() - remoteSessionElapsed;
+        }
         p2.textContent = `Mode: ${response.mode || ""}`;
 
-        // BLOCK MODE: enforce the blocked-sites list.
-        if (response.mode === "block") {
-          isRestrictedPage = false;
-          restrictedVisitStartedAt = 0;
-          totalDuration = 0;
+        // Block Mode
+        if (response.isBlocked) {
+          pageBlocked = true;
           distBar.style.display = "none";
-
-          await checkSite();
+          document.body.innerHTML =
+            "<div style='display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;'><h1>Fckin go back to studying</h1><p>This website is blocked during your Nudge focus session.</p></div>";
           return;
         }
 
-        // Hide the distraction bar for any other non-restrict mode.
-        if (response.mode !== "restrict") {
+        // Restrict Mode
+        if (response.isRestricted) {
+          isRestrictedPage = true;
+          baseTotalDuration = response.baseTotalDuration ?? 0;
+
+          const remoteCurrent = response.currentDuration ?? 0;
+          // Anchor visitStartedAt on first sync, or reconcile if drifted significantly (> 2.5s)
+          // Preserving visitStartedAt ensures the visit timer is NEVER reset to 0 mid-visit!
+          if (
+            visitStartedAt === 0 ||
+            Math.abs((Date.now() - visitStartedAt) - remoteCurrent) > 2500
+          ) {
+            visitStartedAt = Date.now() - remoteCurrent;
+          }
+
+          distBar.style.display = "flex";
+          updateDisplayTimers();
+        } else {
           isRestrictedPage = false;
-          restrictedVisitStartedAt = 0;
-          totalDuration = 0;
+          visitStartedAt = 0;
+          baseTotalDuration = 0;
           distBar.style.display = "none";
-          return;
-        }
-
-        // RESTRICT MODE
-        if (!isRestrictedPage) {
-          await checkSite();
-        }
-
-        if (isRestrictedPage && restrictedVisitStartedAt) {
-          const currentDuration = Date.now() - restrictedVisitStartedAt;
-
-          const usageResponse = await browser.runtime.sendMessage({
-            message: "get_site_usage",
-            hostname,
-          });
-
-          totalDuration = usageResponse?.totalDuration ?? totalDuration;
-
-          timer.textContent = msToTime(currentDuration);
-          totalTimer.textContent = `(This session: ${msToTime(totalDuration + currentDuration)})`;
+          updateDisplayTimers();
         }
       } catch (error) {
-        console.error("Nudge get_session error:", error);
+        console.error("Nudge sync error:", error);
       } finally {
-  isGettingSession = false;
-  console.timeEnd("getSession");
-}
+        isSyncing = false;
+      }
     };
 
-    // INITIALIZE
-    void getSession();
+    // 6. INITIALIZE IMMEDIATELY
+    void syncSite();
 
-    // UPDATE EVERY SECOND
+    // 7. ULTRA-SMOOTH UI TICK (200ms) - Exact, snappy 1-second roll-overs
+    setInterval(updateDisplayTimers, 200);
+
+    // 8. PERIODIC BACKGROUND SYNC (Every 2 seconds) - Keeps other tabs and storage in sync
     setInterval(() => {
-      void getSession();
-    }, 1000);
+      void syncSite();
+    }, 2000);
 
-    // REACT TO SESSION START/STOP OR MODE CHANGES
+    // 9. RE-SYNC IMMEDIATELY WHEN TAB BECOMES ACTIVE
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        void syncSite();
+      }
+    });
+
+    // 10. REACT TO STORAGE CHANGES (e.g. Session start / stop from popup)
     browser.storage.onChanged.addListener((changes, area) => {
       if (area !== "local") return;
 
       if (changes.isActive || changes.mode) {
-        isRestrictedPage = false;
-        restrictedVisitStartedAt = 0;
-        totalDuration = 0;
-
-        void getSession();
+        void syncSite();
       }
     });
   },

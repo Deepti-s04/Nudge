@@ -1,84 +1,99 @@
-import { useState } from "react";
-import { useEffect } from "react";
-interface bg {
+import { useState, useEffect } from "react";
+
+interface BgData {
   isActive: boolean;
   mode: string;
-  startedAt:number;
+  startedAt?: number;
 }
+
 function App() {
-  let [isActive, setisActive] = useState(false);
-  let [mode, setMode] = useState("block");
+  const [isActive, setIsActive] = useState(false);
+  const [mode, setMode] = useState("block");
   const [elapsedTime, setElapsedTime] = useState(0);
-  const handleClick = async() => {
-    const nextState = !isActive;
-    if (nextState) {
-      browser.runtime.sendMessage({
+
+  const handleClick = async () => {
+    if (!isActive) {
+      const response = await browser.runtime.sendMessage({
         message: "start_session",
-        mode: mode,
+        mode,
       });
-      // window.close();
+
+      if (!response?.success) {
+        console.error("Could not start session:", response?.error);
+        return;
+      }
+      setIsActive(true);
     } else {
-      browser.runtime.sendMessage({
+      await browser.runtime.sendMessage({
         message: "stop_session",
-        mode: mode,            
+        mode,
       });
-      setElapsedTime(0); 
+      setElapsedTime(0);
+      setIsActive(false);
     }
-    setisActive(!isActive);
   };
 
   useEffect(() => {
     const getResult = async () => {
-     const result = (await browser.storage.local.get([
-  "isActive",
-  "mode",
-])) as bg;
-      setisActive(result.isActive || false);
-    if (result.mode) {
-  setMode(result.mode);
-}
+      const result = (await browser.storage.local.get([
+        "isActive",
+        "mode",
+      ])) as BgData;
+
+      setIsActive(Boolean(result.isActive));
+      if (result.mode) {
+        setMode(result.mode);
+      }
     };
     getResult();
   }, []);
-function msToTime(duration: number) {
-  const seconds = Math.floor((duration / 1000) % 60);
-  const minutes = Math.floor((duration / (1000 * 60)) % 60);
-  const hours = Math.floor(duration / (1000 * 60 * 60));
 
-  const h = String(hours).padStart(2, "0");
-  const m = String(minutes).padStart(2, "0");
-  const s = String(seconds).padStart(2, "0");
+  function msToTime(duration: number) {
+    const totalSec = Math.max(0, Math.floor(duration / 1000));
+    const seconds = totalSec % 60;
+    const minutes = Math.floor(totalSec / 60) % 60;
+    const hours = Math.floor(totalSec / 3600);
 
-  return `${h}:${m}:${s}`;
-}
-useEffect(()=>{
-  if(!isActive)return;
-  const getSession=()=>{
-      browser.runtime.sendMessage({message:"get_session",mode:mode},(response)=>{
-      setElapsedTime(response.elapsedTime);
-  });
-  };
-  getSession();
-   const inter = setInterval(() => {
-    getSession();
-  }, 1000);
-  return ()=>clearInterval(inter);
-},[isActive])
+    const h = String(hours).padStart(2, "0");
+    const m = String(minutes).padStart(2, "0");
+    const s = String(seconds).padStart(2, "0");
 
-const time = msToTime(elapsedTime);
+    return `${h}:${m}:${s}`;
+  }
+
+  useEffect(() => {
+    if (!isActive) return;
+
+    const fetchSession = async () => {
+      try {
+        const response = await browser.runtime.sendMessage({
+          message: "get_session",
+        });
+        if (response?.elapsedTime !== undefined) {
+          setElapsedTime(response.elapsedTime);
+        }
+      } catch (e) {
+        console.error("Error fetching session:", e);
+      }
+    };
+
+    void fetchSession();
+    const interval = setInterval(fetchSession, 1000);
+    return () => clearInterval(interval);
+  }, [isActive]);
+
+  const time = msToTime(elapsedTime);
+
   return (
     <div className="w-[360px] min-h-[420px] bg-zinc-950 text-white p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Nudge</h1>
-
         <span className="text-sm text-zinc-400">Focus</span>
       </div>
 
       <div className="mt-10 text-center">
         <p className="text-zinc-400 text-sm">Ready to focus?</p>
-
         <h2 className="mt-3 text-5xl font-semibold tracking-tight">{time}</h2>
-
         <p className="mt-3 text-sm text-zinc-500">
           Start a session to begin tracking
         </p>
@@ -86,7 +101,6 @@ const time = msToTime(elapsedTime);
 
       <div className="mt-10">
         <p className="mb-3 text-sm text-zinc-400">Mode</p>
-
         <div className="grid grid-cols-2 gap-2">
           <button
             className={
@@ -112,16 +126,14 @@ const time = msToTime(elapsedTime);
         </div>
       </div>
 
-   <button
-       className="mt-6 w-full rounded-xl bg-white py-3.5 cursor-pointer text-black font-semibold"
-         onClick={handleClick}
-       >
-       {isActive ? "Stop Focus" : "Start Focus"}
-     </button>
+      <button
+        className="mt-6 w-full rounded-xl bg-white py-3.5 cursor-pointer text-black font-semibold"
+        onClick={handleClick}
+      >
+        {isActive ? "Stop Focus" : "Start Focus"}
+      </button>
     </div>
   );
 }
 
 export default App;
-
-  //
