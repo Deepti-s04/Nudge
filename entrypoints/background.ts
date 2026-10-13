@@ -8,6 +8,7 @@ interface ActiveVisit {
   domain: string;
   hostname: string;
   startedAt: number;
+  lastHeartbeat?: number;
 }
 
 interface SessionRecord {
@@ -293,8 +294,11 @@ export default defineBackground(() => {
                 domain: restrictedDomain,
                 hostname: host,
                 startedAt: now,
+                lastHeartbeat: now,
               };
               hasStateChange = true;
+            } else {
+              activeVisits[tabKey].lastHeartbeat = now;
             }
 
             const currentVisit = activeVisits[tabKey];
@@ -303,6 +307,14 @@ export default defineBackground(() => {
             // Sum time from other active tabs currently on the same canonical domain
             let otherTabsDuration = 0;
             for (const [vTabId, visit] of Object.entries(activeVisits)) {
+              // Ignore stale zombie visits that haven't sent a heartbeat in > 10 seconds
+              const isAlive = (now - (visit.lastHeartbeat ?? visit.startedAt)) < 10000;
+              if (!isAlive) {
+                delete activeVisits[vTabId];
+                hasStateChange = true;
+                continue;
+              }
+
               const vDomain =
                 visit.domain ||
                 findMatchingSite(visit.hostname, restrictedSites) ||
@@ -317,7 +329,7 @@ export default defineBackground(() => {
           }
         }
 
-        // Only write to disk if an active visit was created or finalized
+        // Only write to disk if state changed
         if (hasStateChange) {
           await browser.storage.local.set({
             activeVisits,
@@ -362,6 +374,7 @@ export default defineBackground(() => {
             visit.domain ||
             findMatchingSite(visit.hostname, restrictedSites) ||
             normalizeHost(visit.hostname);
+          if (visit.lastHeartbeat && now - visit.lastHeartbeat > 10000) continue;
           if (vDomain === matchedDomain && visitTabId !== tabKey) {
             otherTabsDuration += Math.max(0, now - visit.startedAt);
           }
@@ -376,7 +389,6 @@ export default defineBackground(() => {
 
   // FINALIZE A VISIT WHEN A TAB NAVIGATES AWAY (checks tab.url to avoid false triggers on sub-assets)
   browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    // Only inspect top-level navigation changes
     if (!changeInfo.url || !tab.url) return;
 
     const topHost = safeExtractHost(tab.url);

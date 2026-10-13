@@ -103,23 +103,35 @@ function App() {
         <p className="mb-3 text-sm text-zinc-400">Mode</p>
         <div className="grid grid-cols-2 gap-2">
           <button
-            className={
+            disabled={isActive}
+            style={{ cursor: isActive ? "not-allowed" : "pointer" }}
+            className={`rounded-xl py-3 font-medium transition-all ${
               mode === "block"
-                ? "rounded-xl bg-white text-black py-3 font-medium"
-                : "rounded-xl bg-zinc-800 text-zinc-300 py-3 font-medium"
-            }
-            onClick={() => setMode("block")}
+                ? "bg-white text-black"
+                : "bg-zinc-800 text-zinc-300"
+            } ${
+              isActive
+                ? "opacity-50 cursor-not-allowed"
+                : "cursor-pointer hover:opacity-90"
+            }`}
+            onClick={() => !isActive && setMode("block")}
           >
             Block
           </button>
 
           <button
-            className={
+            disabled={isActive}
+            style={{ cursor: isActive ? "not-allowed" : "pointer" }}
+            className={`rounded-xl py-3 font-medium transition-all ${
               mode === "restrict"
-                ? "rounded-xl bg-white text-black py-3 font-medium"
-                : "rounded-xl bg-zinc-800 text-zinc-300 py-3 font-medium"
-            }
-            onClick={() => setMode("restrict")}
+                ? "bg-white text-black"
+                : "bg-zinc-800 text-zinc-300"
+            } ${
+              isActive
+                ? "opacity-50 cursor-not-allowed"
+                : "cursor-pointer hover:opacity-90"
+            }`}
+            onClick={() => !isActive && setMode("restrict")}
           >
             Restrict
           </button>
@@ -127,7 +139,7 @@ function App() {
       </div>
 
       <button
-        className="mt-6 w-full rounded-xl bg-white py-3.5 cursor-pointer text-black font-semibold"
+        className="mt-6 w-full rounded-xl bg-white py-3.5 cursor-pointer text-black font-semibold hover:opacity-90 transition-opacity"
         onClick={handleClick}
       >
         {isActive ? "Stop Focus" : "Start Focus"}
