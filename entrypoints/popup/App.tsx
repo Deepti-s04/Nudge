@@ -9,8 +9,8 @@ interface SessionRecord {
 }
 
 interface BgData {
-  isActive: boolean;
-  mode: string;
+  isActive?: boolean;
+  mode?: string;
   startedAt?: number;
   sessions?: SessionRecord[];
   blockedSites?: string[];
@@ -24,7 +24,7 @@ interface DayBar {
   isToday: boolean;
 }
 
-const DEFAULT_BLOCKED_SITES = ["twitter.com"];
+const DEFAULT_BLOCKED_SITES = ["x.com", "twitter.com"];
 const DEFAULT_RESTRICTED_SITES = ["youtube.com", "instagram.com"];
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -32,6 +32,7 @@ export default function App() {
   const [view, setView] = useState<"focus" | "profile">("focus");
   const [isActive, setIsActive] = useState(false);
   const [mode, setMode] = useState("block");
+  const [startedAt, setStartedAt] = useState<number>(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
 
@@ -43,21 +44,30 @@ export default function App() {
 
   const loadPopupData = async () => {
     try {
-      const result = (await browser.storage.local.get([
+      const result = await browser.storage.local.get<BgData>([
         "isActive",
         "mode",
         "startedAt",
         "sessions",
         "blockedSites",
         "restrictedSites",
-      ])) as BgData;
+      ]);
 
-      setIsActive(Boolean(result.isActive));
+      const active = Boolean(result.isActive);
+      const start =
+        typeof result.startedAt === "number" && result.startedAt > 0
+          ? result.startedAt
+          : 0;
+
+      setIsActive(active);
+      setStartedAt(start);
+
       if (result.mode) {
         setMode(result.mode);
       }
-      if (result.isActive && result.startedAt) {
-        setElapsedTime(Math.max(0, Date.now() - result.startedAt));
+
+      if (active && start > 0) {
+        setElapsedTime(Math.max(0, Date.now() - start));
       } else {
         setElapsedTime(0);
       }
@@ -68,11 +78,16 @@ export default function App() {
       );
       setSessions(validSessions);
 
-      if (result.blockedSites) {
+      if (result.blockedSites && result.blockedSites.length > 0) {
         setBlockedSites(result.blockedSites);
+      } else {
+        setBlockedSites(DEFAULT_BLOCKED_SITES);
       }
-      if (result.restrictedSites) {
+
+      if (result.restrictedSites && result.restrictedSites.length > 0) {
         setRestrictedSites(result.restrictedSites);
+      } else {
+        setRestrictedSites(DEFAULT_RESTRICTED_SITES);
       }
     } catch (err) {
       console.error("Failed to load popup data:", err);
@@ -83,7 +98,16 @@ export default function App() {
     void loadPopupData();
 
     const onStorageChange = (changes: Record<string, any>, area: string) => {
-      if (area === "local") {
+      if (area !== "local") return;
+      // Only reload on actual state/site changes, not periodic background heartbeat writes
+      if (
+        changes.isActive !== undefined ||
+        changes.mode !== undefined ||
+        changes.startedAt !== undefined ||
+        changes.blockedSites !== undefined ||
+        changes.restrictedSites !== undefined ||
+        changes.sessions !== undefined
+      ) {
         void loadPopupData();
       }
     };
@@ -94,32 +118,33 @@ export default function App() {
     };
   }, []);
 
-  // Timer tick for active session
+  // Real-time monotonic tick for active session (zero drift, no reset glitches)
   useEffect(() => {
-    if (!isActive) {
+    if (!isActive || !startedAt) {
       setElapsedTime(0);
       return;
     }
 
-    const interval = setInterval(() => {
-      browser.storage.local.get(["startedAt", "isActive"]).then((res) => {
-        if (res.isActive && res.startedAt) {
-          setElapsedTime(Math.max(0, Date.now() - res.startedAt));
-        }
-      });
-    }, 1000);
+    const updateTimer = () => {
+      setElapsedTime(Math.max(0, Date.now() - startedAt));
+    };
 
+    updateTimer();
+    const interval = setInterval(updateTimer, 500);
     return () => clearInterval(interval);
-  }, [isActive]);
+  }, [isActive, startedAt]);
 
   const handleToggleSession = async () => {
     if (!isActive) {
+      const now = Date.now();
       const response = await browser.runtime.sendMessage({
         message: "start_session",
         mode,
       });
       if (response?.success) {
         setIsActive(true);
+        setStartedAt(now);
+        setElapsedTime(0);
       }
     } else {
       await browser.runtime.sendMessage({
@@ -127,6 +152,7 @@ export default function App() {
         mode,
       });
       setIsActive(false);
+      setStartedAt(0);
       setElapsedTime(0);
     }
     void loadPopupData();
@@ -143,8 +169,7 @@ export default function App() {
       .toLowerCase()
       .replace(/^https?:\/\//, "")
       .replace(/^www\./, "")
-      .split("/")[0]
-      .split("?")[0]
+      .replace(/[/?#].*$/, "")
       .trim();
   };
 
@@ -153,6 +178,11 @@ export default function App() {
     const domain = normalizeDomain(newBlockedInput);
     if (!domain || blockedSites.includes(domain)) return;
     const updated = [...blockedSites, domain];
+    if (domain === "x.com" && !updated.includes("twitter.com")) {
+      updated.push("twitter.com");
+    } else if (domain === "twitter.com" && !updated.includes("x.com")) {
+      updated.push("x.com");
+    }
     setBlockedSites(updated);
     setNewBlockedInput("");
     await browser.storage.local.set({ blockedSites: updated });
@@ -352,8 +382,8 @@ export default function App() {
               onClick={handleToggleSession}
               className={`w-full py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all cursor-pointer shadow-sm ${
                 isActive
-                  ? "bg-rose-600/90 hover:bg-rose-600 text-white border border-rose-500/30"
-                  : "bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-500/30"
+                  ? "bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30"
+                  : "bg-white hover:bg-zinc-200 text-zinc-950 border border-white"
               }`}
             >
               {isActive ? "Stop Focus Session" : "Start Focus Session"}
@@ -390,12 +420,12 @@ export default function App() {
                     className={`w-full rounded-t-xs transition-all ${
                       bar.minutes > 0
                         ? bar.isToday
-                          ? "bg-indigo-500"
-                          : "bg-zinc-600"
+                          ? "bg-white"
+                          : "bg-zinc-500"
                         : "bg-zinc-800"
                     }`}
                   />
-                  <span className={`text-[8px] font-mono leading-none ${bar.isToday ? "text-indigo-400 font-bold" : "text-zinc-500"}`}>
+                  <span className={`text-[8px] font-mono leading-none ${bar.isToday ? "text-zinc-200 font-bold" : "text-zinc-500"}`}>
                     {bar.dayLabel.charAt(0)}
                   </span>
                 </div>

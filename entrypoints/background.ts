@@ -1,7 +1,9 @@
+// Nudge Background Service Worker (Manifest V3)
 interface Message {
   message: string;
   mode?: string;
   hostname?: string;
+  tabVisitStartedAt?: number;
 }
 
 interface ActiveVisit {
@@ -36,20 +38,36 @@ interface BackgroundData {
   domainSpans?: Record<string, DomainSpan>;
 }
 
-const DEFAULT_BLOCKED_SITES = ["twitter.com"];
+const DEFAULT_BLOCKED_SITES = ["x.com", "twitter.com"];
 const DEFAULT_RESTRICTED_SITES = ["youtube.com", "instagram.com"];
 export const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 function normalizeHost(host: string): string {
-  return host.toLowerCase().trim().replace(/^www\./, "");
+  if (!host) return "";
+  return host
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/[/?#].*$/, "")
+    .trim();
 }
 
 function findMatchingSite(hostname: string, sites: string[]): string | null {
   const host = normalizeHost(hostname);
   if (!host) return null;
 
-  for (const site of sites) {
-    const domain = normalizeHost(site);
+  // Domain aliases for common rebrands (e.g. twitter.com <-> x.com)
+  const normalizedSites = sites.map((s) => normalizeHost(s)).filter(Boolean);
+  const expandedSites = [...normalizedSites];
+  if (normalizedSites.includes("twitter.com") && !normalizedSites.includes("x.com")) {
+    expandedSites.push("x.com");
+  }
+  if (normalizedSites.includes("x.com") && !normalizedSites.includes("twitter.com")) {
+    expandedSites.push("twitter.com");
+  }
+
+  for (const domain of expandedSites) {
     if (!domain) continue;
     if (host === domain || host.endsWith(`.${domain}`)) {
       return domain;
@@ -113,7 +131,7 @@ function runSerial<T>(task: () => Promise<T>): Promise<T> {
 }
 
 export default defineBackground(() => {
-  // CLEANUP ORPHANED VISITS ON STARTUP (e.g. after browser restart or extension reload)
+  // CLEANUP ORPHANED VISITS & INITIALIZE DEFAULTS ON STARTUP
   runSerial(async () => {
     try {
       const data = (await browser.storage.local.get([
@@ -121,35 +139,48 @@ export default defineBackground(() => {
         "sessionSiteUsage",
         "domainSpans",
         "isActive",
+        "blockedSites",
+        "restrictedSites",
       ])) as BackgroundData;
 
-      if (!data.activeVisits || Object.keys(data.activeVisits).length === 0) return;
+      const updates: Record<string, any> = {};
 
-      const openTabs = await browser.tabs.query({});
-      const openTabIds = new Set(openTabs.map((t) => String(t.id)));
-      const activeVisits = { ...(data.activeVisits ?? {}) };
-      const usage = { ...(data.sessionSiteUsage ?? {}) };
-      const domainSpans = { ...(data.domainSpans ?? {}) };
-      const now = Date.now();
-      let changed = false;
+      if (!data.blockedSites || data.blockedSites.length === 0) {
+        updates.blockedSites = DEFAULT_BLOCKED_SITES;
+      }
+      if (!data.restrictedSites || data.restrictedSites.length === 0) {
+        updates.restrictedSites = DEFAULT_RESTRICTED_SITES;
+      }
 
-      for (const [tabKey, visit] of Object.entries(activeVisits)) {
-        if (!openTabIds.has(tabKey)) {
-          delete activeVisits[tabKey];
-          removeTabFromDomain(domainSpans, usage, visit.domain, tabKey, now);
-          changed = true;
+      if (data.activeVisits && Object.keys(data.activeVisits).length > 0) {
+        const openTabs = await browser.tabs.query({});
+        const openTabIds = new Set(openTabs.map((t) => String(t.id)));
+        const activeVisits = { ...(data.activeVisits ?? {}) };
+        const usage = { ...(data.sessionSiteUsage ?? {}) };
+        const domainSpans = { ...(data.domainSpans ?? {}) };
+        const now = Date.now();
+        let changed = false;
+
+        for (const [tabKey, visit] of Object.entries(activeVisits)) {
+          if (!openTabIds.has(tabKey)) {
+            delete activeVisits[tabKey];
+            removeTabFromDomain(domainSpans, usage, visit.domain, tabKey, now);
+            changed = true;
+          }
+        }
+
+        if (changed) {
+          updates.activeVisits = activeVisits;
+          updates.sessionSiteUsage = usage;
+          updates.domainSpans = domainSpans;
         }
       }
 
-      if (changed) {
-        await browser.storage.local.set({
-          activeVisits,
-          sessionSiteUsage: usage,
-          domainSpans,
-        });
+      if (Object.keys(updates).length > 0) {
+        await browser.storage.local.set(updates);
       }
     } catch (e) {
-      console.warn("Nudge startup cleanup error:", e);
+      console.warn("Nudge startup cleanup & init error:", e);
     }
   });
 
@@ -283,19 +314,28 @@ export default defineBackground(() => {
           };
         }
 
+        const sessionStart =
+          typeof data.startedAt === "number" && data.startedAt > 0
+            ? data.startedAt
+            : now;
+
+        if (!data.startedAt) {
+          await browser.storage.local.set({ startedAt: sessionStart });
+        }
+
         const blockedSites = data.blockedSites ?? DEFAULT_BLOCKED_SITES;
         const restrictedSites = data.restrictedSites ?? DEFAULT_RESTRICTED_SITES;
 
         const blockedDomain =
           data.mode === "block" ? findMatchingSite(host, blockedSites) : null;
         const restrictedDomain =
-          data.mode === "restrict" ? findMatchingSite(host, restrictedSites) : null;
+          !blockedDomain ? findMatchingSite(host, restrictedSites) : null;
 
         if (blockedDomain) {
           return {
             isActive: true,
             mode: data.mode ?? "",
-            sessionStartedAt: data.startedAt ?? now,
+            sessionStartedAt: sessionStart,
             isBlocked: true,
             isRestricted: false,
             visitStartedAt: 0,
@@ -307,7 +347,8 @@ export default defineBackground(() => {
         const activeVisits = { ...(data.activeVisits ?? {}) };
         const usage = { ...(data.sessionSiteUsage ?? {}) };
         const domainSpans = { ...(data.domainSpans ?? {}) };
-        const tabKey = tabId !== undefined ? String(tabId) : undefined;
+        // Resilient tabKey: tabId if available, or domain-keyed fallback
+        const tabKey = tabId !== undefined ? String(tabId) : (host ? `tab_${host}` : "main_tab");
         let hasStateChange = false;
 
         if (tabKey !== undefined) {
@@ -321,23 +362,32 @@ export default defineBackground(() => {
           }
 
           if (restrictedDomain) {
+            const clientStart =
+              typeof msg.tabVisitStartedAt === "number" && msg.tabVisitStartedAt > 0
+                ? msg.tabVisitStartedAt
+                : now;
+
             // Start or refresh visit for this tab
             if (!activeVisits[tabKey]) {
               activeVisits[tabKey] = {
                 domain: restrictedDomain,
                 hostname: host,
-                startedAt: now,
+                startedAt: clientStart,
                 lastHeartbeat: now,
               };
               hasStateChange = true;
             } else {
               activeVisits[tabKey].lastHeartbeat = now;
-              hasStateChange = true;
+              // Never advance startedAt forward! Only preserve or align to earlier start
+              if (clientStart < activeVisits[tabKey].startedAt) {
+                activeVisits[tabKey].startedAt = clientStart;
+                hasStateChange = true;
+              }
             }
 
-            // Clean up any stale visits from dead tabs (no heartbeat in > 10s)
+            // Clean up any stale visits from dead tabs (no heartbeat in > 15s)
             for (const [vTabId, visit] of Object.entries(activeVisits)) {
-              if (vTabId !== tabKey && now - (visit.lastHeartbeat ?? visit.startedAt) > 10000) {
+              if (vTabId !== tabKey && now - (visit.lastHeartbeat ?? visit.startedAt) > 15000) {
                 removeTabFromDomain(domainSpans, usage, visit.domain, vTabId, now);
                 delete activeVisits[vTabId];
                 hasStateChange = true;
@@ -369,7 +419,7 @@ export default defineBackground(() => {
             return {
               isActive: true,
               mode: data.mode ?? "",
-              sessionStartedAt: data.startedAt ?? now,
+              sessionStartedAt: sessionStart,
               isBlocked: false,
               isRestricted: true,
               domain: restrictedDomain,
@@ -391,7 +441,7 @@ export default defineBackground(() => {
         return {
           isActive: true,
           mode: data.mode ?? "",
-          sessionStartedAt: data.startedAt ?? now,
+          sessionStartedAt: sessionStart,
           isBlocked: false,
           isRestricted: false,
           visitStartedAt: 0,
@@ -427,15 +477,23 @@ export default defineBackground(() => {
         await browser.tabs.create({ url });
         return { success: true };
       }
+
+      // 7. CLOSE CURRENT TAB
+      if (msg.message === "close_current_tab") {
+        if (sender.tab?.id !== undefined) {
+          await browser.tabs.remove(sender.tab.id);
+        }
+        return { success: true };
+      }
     }),
   );
 
   // FINALIZE A VISIT WHEN A TAB NAVIGATES AWAY
   browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    const newUrl = changeInfo.url || tab.url;
-    if (!newUrl) return;
+    // Only check navigation when the tab's URL actually changed
+    if (!changeInfo.url) return;
 
-    const topHost = safeExtractHost(newUrl);
+    const topHost = safeExtractHost(changeInfo.url);
     if (!topHost) return;
 
     runSerial(async () => {

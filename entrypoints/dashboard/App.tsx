@@ -28,6 +28,109 @@ interface DailyBarData {
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
+// --- ELEGANT MINIMALIST SVG ICONS (CHIC & CRISP) ---
+function IconShield({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+  );
+}
+
+function IconClock({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  );
+}
+
+function IconTrophy({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
+      <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+      <path d="M4 22h16" />
+      <path d="M10 14.66V17c0 .55-.45 1-1 1H7" />
+      <path d="M14 14.66V17c0 .55.45 1 1 1h2" />
+      <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+    </svg>
+  );
+}
+
+function IconAlertTriangle({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  );
+}
+
+function IconTarget({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="12" r="6" />
+      <circle cx="12" cy="12" r="2" />
+    </svg>
+  );
+}
+
+function IconBarChart({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="20" x2="12" y2="10" />
+      <line x1="18" y1="20" x2="18" y2="4" />
+      <line x1="6" y1="20" x2="6" y2="16" />
+    </svg>
+  );
+}
+
+function IconSun({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="5" />
+      <line x1="12" y1="1" x2="12" y2="3" />
+      <line x1="12" y1="21" x2="12" y2="23" />
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+      <line x1="1" y1="12" x2="3" y2="12" />
+      <line x1="21" y1="12" x2="23" y2="12" />
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+    </svg>
+  );
+}
+
+function IconMoon({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+    </svg>
+  );
+}
+
+function IconTrash({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    </svg>
+  );
+}
+
+function IconCheckCircle({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+      <polyline points="22 4 12 14.01 9 11.01" />
+    </svg>
+  );
+}
+
 export default function App() {
   const [data, setData] = useState<StorageData>({
     sessions: [],
@@ -35,12 +138,42 @@ export default function App() {
     mode: "block",
     startedAt: 0,
     sessionSiteUsage: {},
-    blockedSites: ["twitter.com"],
+    blockedSites: ["x.com", "twitter.com"],
     restrictedSites: ["youtube.com", "instagram.com"],
   });
+
   const [filterMode, setFilterMode] = useState<"all" | "block" | "restrict">("all");
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [now, setNow] = useState(Date.now());
+
+  // Theme state: "dark" | "light"
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("nudge_dashboard_theme");
+      if (saved === "dark" || saved === "light") return saved;
+      if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) {
+        return "light";
+      }
+    }
+    return "dark";
+  });
+
+  // Mode Selection State for Starting Sessions
+  const [selectedMode, setSelectedMode] = useState<"block" | "restrict">("block");
+
+  // Sync theme with body and html
+  useEffect(() => {
+    localStorage.setItem("nudge_dashboard_theme", theme);
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
+      document.body.style.backgroundColor = "#09090b";
+      document.body.style.color = "#f4f4f5";
+    } else {
+      document.documentElement.classList.remove("dark");
+      document.body.style.backgroundColor = "#f8f9fa";
+      document.body.style.color = "#09090b";
+    }
+  }, [theme]);
 
   const loadData = async () => {
     try {
@@ -58,10 +191,9 @@ export default function App() {
       const cutoff = currentTime - THIRTY_DAYS_MS;
       const rawSessions = stored.sessions ?? [];
 
-      // Enforce 30-day retention: filter sessions
+      // Enforce 30-day retention
       const validSessions = rawSessions.filter((s) => s.startedAt >= cutoff);
 
-      // If older sessions were found, prune them from persistent storage
       if (validSessions.length !== rawSessions.length) {
         await browser.storage.local.set({ sessions: validSessions });
       }
@@ -70,6 +202,10 @@ export default function App() {
         ...stored,
         sessions: validSessions,
       });
+
+      if (stored.mode === "block" || stored.mode === "restrict") {
+        setSelectedMode(stored.mode);
+      }
     } catch (err) {
       console.error("Failed to load dashboard data:", err);
     }
@@ -80,7 +216,17 @@ export default function App() {
 
     const onStorageChange = (changes: Record<string, any>, areaName: string) => {
       if (areaName === "local") {
-        void loadData();
+        if (
+          changes.isActive !== undefined ||
+          changes.mode !== undefined ||
+          changes.startedAt !== undefined ||
+          changes.blockedSites !== undefined ||
+          changes.restrictedSites !== undefined ||
+          changes.sessions !== undefined ||
+          changes.sessionSiteUsage !== undefined
+        ) {
+          void loadData();
+        }
       }
     };
     browser.storage.onChanged.addListener(onStorageChange);
@@ -90,13 +236,22 @@ export default function App() {
     };
   }, []);
 
-  // 1-second interval to update live session clock
+  // 1-second interval to update live clock
   useEffect(() => {
     const timer = setInterval(() => {
       setNow(Date.now());
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  const handleSelectMode = async (mode: "block" | "restrict") => {
+    setSelectedMode(mode);
+    try {
+      await browser.storage.local.set({ mode });
+    } catch (err) {
+      console.error("Failed to persist mode:", err);
+    }
+  };
 
   const handleClearHistory = async () => {
     try {
@@ -114,13 +269,13 @@ export default function App() {
     } else {
       await browser.runtime.sendMessage({
         message: "start_session",
-        mode: data.mode || "restrict",
+        mode: selectedMode,
       });
     }
     void loadData();
   };
 
-  // --- TIME HELPERS ---
+  // --- TIME FORMATTERS ---
   const formatDuration = (ms: number): string => {
     if (ms <= 0) return "0s";
     const totalSec = Math.floor(ms / 1000);
@@ -161,16 +316,15 @@ export default function App() {
     });
   };
 
-  // --- 30-DAY ANALYTICS COMPUTATIONS ---
+  // --- 30-DAY COMPUTATIONS ---
   const sessions = data.sessions ?? [];
 
-  // Completed & Live Durations
   const completedDurationMs = sessions.reduce((acc, s) => acc + (s.duration || 0), 0);
   const liveDurationMs =
     data.isActive && data.startedAt ? Math.max(0, now - data.startedAt) : 0;
   const totalFocusDurationMs = completedDurationMs + liveDurationMs;
 
-  // 1. Separate Space for Last Session
+  // 1. Last session
   const lastSession = sessions.length > 0 ? sessions[sessions.length - 1] : null;
   const lastSessionDistractionMs = lastSession
     ? Object.values(lastSession.siteUsage ?? {}).reduce((acc, v) => acc + v, 0)
@@ -191,7 +345,7 @@ export default function App() {
         )
       : 100;
 
-  // 2. Longest Session Without Distraction
+  // 2. Longest clean session
   const cleanSessions = sessions.filter((s) => {
     const dist = Object.values(s.siteUsage ?? {}).reduce((a, b) => a + b, 0);
     return dist === 0 && s.duration > 0;
@@ -201,7 +355,7 @@ export default function App() {
       ? cleanSessions.reduce((max, s) => (s.duration > max.duration ? s : max))
       : null;
 
-  // 3. Analytics for All Restricted Apps (Last 30 Days)
+  // 3. Analytics for restricted apps
   const restrictedAppsStats: Record<
     string,
     { totalDuration: number; sessionCount: number }
@@ -235,23 +389,20 @@ export default function App() {
     0,
   );
 
-  // Overall Focus Efficiency Score
   let overallEfficiency = 100;
   if (totalFocusDurationMs > 0) {
     const ratio = Math.max(0, 1 - totalDistractionMs / totalFocusDurationMs);
     overallEfficiency = Math.round(ratio * 100);
   }
 
-  // Sorted list of restricted sites
   const sortedRestrictedSites = Object.entries(restrictedAppsStats).sort(
     (a, b) => b[1].totalDuration - a[1].totalDuration,
   );
 
-  // 4. Most Distracting Website
   const topDistractingApp =
     sortedRestrictedSites.length > 0 ? sortedRestrictedSites[0] : null;
 
-  // 5. Daily Bar Graph Data (Past 14 Days)
+  // 4. Daily Bar Graph Data (Past 14 Days)
   const dailyBarData: DailyBarData[] = [];
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   let maxDailyFocusMinutes = 1;
@@ -267,27 +418,34 @@ export default function App() {
     const startTs = targetDate.getTime();
     const endTs = nextDate.getTime();
 
-    // Sum focus and distraction for this day
     const daySessions = sessions.filter(
       (s) => s.startedAt >= startTs && s.startedAt < endTs,
     );
-    let dayFocusMs = daySessions.reduce((acc, s) => acc + (s.duration || 0), 0);
-    let dayDistractionMs = daySessions.reduce((acc, s) => {
-      const dist = Object.values(s.siteUsage ?? {}).reduce((a, b) => a + b, 0);
-      return acc + dist;
-    }, 0);
 
-    // If today is active, include live focus time
+    let dayFocusMs = daySessions.reduce((acc, s) => acc + (s.duration || 0), 0);
+    let dayDistractionMs = 0;
+
+    for (const s of daySessions) {
+      if (s.siteUsage) {
+        dayDistractionMs += Object.values(s.siteUsage).reduce((a, b) => a + b, 0);
+      }
+    }
+
     if (i === 0 && data.isActive && data.startedAt) {
-      dayFocusMs += liveDurationMs;
+      dayFocusMs += Math.max(0, now - data.startedAt);
+      if (data.sessionSiteUsage) {
+        dayDistractionMs += Object.values(data.sessionSiteUsage).reduce(
+          (a, b) => a + b,
+          0,
+        );
+      }
     }
 
     const focusMinutes = Math.round(dayFocusMs / 60000);
     const distractionMinutes = Math.round(dayDistractionMs / 60000);
 
-    if (focusMinutes > maxDailyFocusMinutes) {
-      maxDailyFocusMinutes = focusMinutes;
-    }
+    if (focusMinutes > maxDailyFocusMinutes) maxDailyFocusMinutes = focusMinutes;
+    if (distractionMinutes > maxDailyFocusMinutes) maxDailyFocusMinutes = distractionMinutes;
 
     dailyBarData.push({
       dateStr: `${targetDate.getMonth() + 1}/${targetDate.getDate()}`,
@@ -298,183 +456,489 @@ export default function App() {
     });
   }
 
-  // Filtered session list for table
-  const filteredSessions = [...sessions]
-    .reverse()
-    .filter((s) => (filterMode === "all" ? true : s.mode === filterMode));
+  // 5. Filtered sessions
+  const filteredSessions = sessions.filter((s) => {
+    if (filterMode === "all") return true;
+    return s.mode === filterMode;
+  });
+
+  const isDark = theme === "dark";
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans selection:bg-indigo-600/30">
-      {/* Top Navbar */}
-      <header className="border-b border-zinc-800/80 bg-zinc-900/60 sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+    <div
+      className={`min-h-screen flex flex-col font-sans transition-colors duration-200 select-none ${
+        isDark ? "bg-[#09090b] text-[#f4f4f5]" : "bg-[#f8f9fa] text-[#09090b]"
+      }`}
+    >
+      {/* HEADER */}
+      <header
+        className={`sticky top-0 z-40 border-b backdrop-blur-md transition-colors ${
+          isDark
+            ? "bg-[#09090b]/80 border-neutral-800"
+            : "bg-white/80 border-neutral-200"
+        }`}
+      >
+        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
+          {/* Logo & Brand */}
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-zinc-800 border border-zinc-700/80 flex items-center justify-center font-bold text-zinc-100 shadow-sm">
+            <div
+              className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm tracking-tight border transition-colors ${
+                isDark
+                  ? "bg-neutral-900 border-neutral-800 text-neutral-100 shadow-sm"
+                  : "bg-neutral-100 border-neutral-200 text-neutral-900 shadow-sm"
+              }`}
+            >
               N
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-bold text-lg tracking-tight text-white">Nudge</span>
-                <span className="text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700/60">
-                  Analytics
+                <span className="font-bold text-base tracking-tight">Nudge</span>
+                <span
+                  className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                    isDark
+                      ? "bg-neutral-900 text-neutral-300 border-neutral-800"
+                      : "bg-neutral-100 text-neutral-600 border-neutral-200"
+                  }`}
+                >
+                  Focus Analytics
                 </span>
-                <span className="text-[11px] font-medium text-zinc-400 bg-zinc-850 px-2 py-0.5 rounded-full border border-zinc-800">
+                <span
+                  className={`hidden sm:inline text-[10px] font-medium px-2 py-0.5 rounded-full border ${
+                    isDark
+                      ? "bg-neutral-950 text-neutral-500 border-neutral-850"
+                      : "bg-neutral-50 text-neutral-400 border-neutral-200"
+                  }`}
+                >
                   Last 30 Days
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            {data.isActive ? (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
+          {/* Controls: Mode Selector, Start/Stop Button, Theme Toggle */}
+          <div className="flex items-center gap-2.5">
+            {/* Live Indicator (When Active) */}
+            {data.isActive && (
+              <div
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium font-mono ${
+                  isDark
+                    ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-400"
+                    : "bg-emerald-50 border-emerald-200 text-emerald-700"
+                }`}
+              >
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                 </span>
                 <span>Active ({formatTimerDigits(liveDurationMs)})</span>
               </div>
-            ) : (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 text-xs font-medium">
-                <span className="w-2 h-2 rounded-full bg-zinc-600"></span>
-                <span>Idle</span>
+            )}
+
+            {/* Mode Selector (When Idle) */}
+            {!data.isActive && (
+              <div
+                className={`flex items-center p-0.5 rounded-xl border text-xs ${
+                  isDark ? "bg-neutral-900 border-neutral-800" : "bg-neutral-100 border-neutral-200"
+                }`}
+              >
+                <button
+                  onClick={() => handleSelectMode("block")}
+                  title="Hard lockout screen on blocked sites"
+                  className={`px-2.5 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
+                    selectedMode === "block"
+                      ? isDark
+                        ? "bg-neutral-800 text-white shadow-sm border border-neutral-700"
+                        : "bg-white text-neutral-900 shadow-sm border border-neutral-300"
+                      : isDark
+                        ? "text-neutral-400 hover:text-neutral-200"
+                        : "text-neutral-500 hover:text-neutral-900"
+                  }`}
+                >
+                  <IconShield className="w-3.5 h-3.5" />
+                  <span>Block</span>
+                </button>
+
+                <button
+                  onClick={() => handleSelectMode("restrict")}
+                  title="Soft warning bar & distraction timers"
+                  className={`px-2.5 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
+                    selectedMode === "restrict"
+                      ? isDark
+                        ? "bg-neutral-800 text-white shadow-sm border border-neutral-700"
+                        : "bg-white text-neutral-900 shadow-sm border border-neutral-300"
+                      : isDark
+                        ? "text-neutral-400 hover:text-neutral-200"
+                        : "text-neutral-500 hover:text-neutral-900"
+                  }`}
+                >
+                  <IconClock className="w-3.5 h-3.5" />
+                  <span>Restrict</span>
+                </button>
               </div>
             )}
 
+            {/* Primary Action Button (Start / Stop) */}
             <button
               onClick={handleToggleSession}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-sm ${
+              className={`px-4 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-sm ${
                 data.isActive
-                  ? "bg-rose-600/20 text-rose-300 hover:bg-rose-600/30 border border-rose-500/30"
-                  : "bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-500/30"
+                  ? isDark
+                    ? "bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30"
+                    : "bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200"
+                  : isDark
+                    ? "bg-white hover:bg-neutral-200 text-neutral-950 border border-white"
+                    : "bg-neutral-950 hover:bg-neutral-800 text-white border border-neutral-950"
               }`}
             >
-              {data.isActive ? "Stop Focus" : "Start Focus"}
+              {data.isActive ? "Stop Focus" : `Start Focus (${selectedMode.toUpperCase()})`}
+            </button>
+
+            {/* Dark / Light Mode Switcher */}
+            <button
+              onClick={() => setTheme(isDark ? "light" : "dark")}
+              title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
+              className={`w-9 h-9 rounded-xl border flex items-center justify-center transition-all cursor-pointer ${
+                isDark
+                  ? "bg-neutral-900 border-neutral-800 text-neutral-300 hover:text-white hover:bg-neutral-800"
+                  : "bg-white border-neutral-200 text-neutral-600 hover:text-neutral-950 hover:bg-neutral-50"
+              }`}
+            >
+              {isDark ? <IconSun className="w-4 h-4" /> : <IconMoon className="w-4 h-4" />}
             </button>
           </div>
         </div>
       </header>
 
-      {/* Main Container */}
+      {/* MAIN CONTAINER */}
       <main className="max-w-6xl mx-auto px-6 py-8 flex-1 w-full space-y-8">
-        {/* Live Active Session Banner */}
+        {/* ACTIVE SESSION HERO CARD */}
         {data.isActive && (
-          <div className="rounded-2xl bg-zinc-900/80 border border-indigo-500/40 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
-            <div className="space-y-1">
+          <div
+            className={`rounded-2xl border p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm transition-colors ${
+              isDark
+                ? "bg-neutral-900/70 border-emerald-500/30"
+                : "bg-white border-emerald-200 shadow-emerald-50/50"
+            }`}
+          >
+            <div className="space-y-1.5">
               <div className="flex items-center gap-2">
                 <span className="relative flex h-2.5 w-2.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                 </span>
-                <h2 className="text-xs font-semibold tracking-wide uppercase text-indigo-300">
+                <h2
+                  className={`text-xs font-bold uppercase tracking-wider ${
+                    isDark ? "text-emerald-400" : "text-emerald-700"
+                  }`}
+                >
                   Live Session in Progress
                 </h2>
               </div>
-              <p className="text-zinc-400 text-xs">
-                Mode: <strong className="text-white capitalize">{data.mode}</strong> • Monitoring focus & active restrictions
+              <p className={`text-xs ${isDark ? "text-neutral-400" : "text-neutral-600"}`}>
+                Mode:{" "}
+                <strong
+                  className={`font-semibold capitalize ${
+                    isDark ? "text-white" : "text-neutral-900"
+                  }`}
+                >
+                  {data.mode}
+                </strong>{" "}
+                • {data.mode === "block" ? "Hard Lockout Active on Blocked Sites" : "Real-time Distraction Timers Active"}
               </p>
             </div>
 
             <div className="text-right">
-              <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-semibold block">
+              <span
+                className={`text-[10px] uppercase tracking-wider font-semibold block ${
+                  isDark ? "text-neutral-500" : "text-neutral-400"
+                }`}
+              >
                 Current Sprint
               </span>
-              <span className="text-3xl font-bold font-mono text-white tracking-tight">
+              <span
+                className={`text-3xl font-bold font-mono tracking-tight ${
+                  isDark ? "text-white" : "text-neutral-950"
+                }`}
+              >
                 {formatTimerDigits(liveDurationMs)}
               </span>
             </div>
           </div>
         )}
 
-        {/* SECTION 1: DEDICATED SPACE FOR LAST SESSION */}
+        {/* IDLE MODE LAUNCHPAD (Gives clear, chic options to pick mode and start) */}
+        {!data.isActive && (
+          <div
+            className={`rounded-2xl border p-6 transition-colors ${
+              isDark
+                ? "bg-neutral-900/40 border-neutral-800"
+                : "bg-white border-neutral-200 shadow-sm"
+            }`}
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+              <div>
+                <h2 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2">
+                  <IconTarget className="w-4 h-4 text-emerald-500" />
+                  <span>Choose Your Focus Mode</span>
+                </h2>
+                <p className={`text-xs mt-0.5 ${isDark ? "text-neutral-400" : "text-neutral-600"}`}>
+                  Select how you want Nudge to safeguard your attention before starting your sprint
+                </p>
+              </div>
+
+              <button
+                onClick={handleToggleSession}
+                className={`px-5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-sm ${
+                  isDark
+                    ? "bg-white hover:bg-neutral-200 text-neutral-950"
+                    : "bg-neutral-950 hover:bg-neutral-800 text-white"
+                }`}
+              >
+                Start {selectedMode === "block" ? "Block" : "Restrict"} Sprint →
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Option 1: Block Mode */}
+              <div
+                onClick={() => handleSelectMode("block")}
+                className={`p-4 rounded-xl border transition-all cursor-pointer ${
+                  selectedMode === "block"
+                    ? isDark
+                      ? "bg-neutral-850/80 border-neutral-600 ring-1 ring-neutral-500/30"
+                      : "bg-neutral-50/80 border-neutral-900 ring-1 ring-neutral-900/10"
+                    : isDark
+                      ? "bg-neutral-900/20 border-neutral-800 hover:border-neutral-700"
+                      : "bg-white border-neutral-200 hover:border-neutral-300"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+                        selectedMode === "block"
+                          ? isDark
+                            ? "bg-rose-500/15 text-rose-400"
+                            : "bg-rose-100 text-rose-700"
+                          : isDark
+                            ? "bg-neutral-800 text-neutral-400"
+                            : "bg-neutral-100 text-neutral-500"
+                      }`}
+                    >
+                      <IconShield className="w-4 h-4" />
+                    </div>
+                    <span className="font-bold text-sm">Block Mode</span>
+                  </div>
+                  <span
+                    className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                      selectedMode === "block"
+                        ? isDark
+                          ? "bg-rose-500/10 text-rose-300 border-rose-500/20"
+                          : "bg-rose-50 text-rose-700 border-rose-200"
+                        : isDark
+                          ? "bg-neutral-800 text-neutral-500 border-neutral-750"
+                          : "bg-neutral-100 text-neutral-400 border-neutral-200"
+                    }`}
+                  >
+                    Hard Lockout
+                  </span>
+                </div>
+                <p className={`text-xs leading-relaxed ${isDark ? "text-neutral-400" : "text-neutral-600"}`}>
+                  Completely blocks access to distracting websites (e.g. Twitter). Renders a calm, motivating full-screen focus reminder to keep you in the zone.
+                </p>
+              </div>
+
+              {/* Option 2: Restrict Mode */}
+              <div
+                onClick={() => handleSelectMode("restrict")}
+                className={`p-4 rounded-xl border transition-all cursor-pointer ${
+                  selectedMode === "restrict"
+                    ? isDark
+                      ? "bg-neutral-850/80 border-neutral-600 ring-1 ring-neutral-500/30"
+                      : "bg-neutral-50/80 border-neutral-900 ring-1 ring-neutral-900/10"
+                    : isDark
+                      ? "bg-neutral-900/20 border-neutral-800 hover:border-neutral-700"
+                      : "bg-white border-neutral-200 hover:border-neutral-300"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+                        selectedMode === "restrict"
+                          ? isDark
+                            ? "bg-amber-500/15 text-amber-400"
+                            : "bg-amber-100 text-amber-700"
+                          : isDark
+                            ? "bg-neutral-800 text-neutral-400"
+                            : "bg-neutral-100 text-neutral-500"
+                      }`}
+                    >
+                      <IconClock className="w-4 h-4" />
+                    </div>
+                    <span className="font-bold text-sm">Restrict Mode</span>
+                  </div>
+                  <span
+                    className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                      selectedMode === "restrict"
+                        ? isDark
+                          ? "bg-amber-500/10 text-amber-300 border-amber-500/20"
+                          : "bg-amber-50 text-amber-700 border-amber-200"
+                        : isDark
+                          ? "bg-neutral-800 text-neutral-500 border-neutral-750"
+                          : "bg-neutral-100 text-neutral-400 border-neutral-200"
+                    }`}
+                  >
+                    Soft Nudge
+                  </span>
+                </div>
+                <p className={`text-xs leading-relaxed ${isDark ? "text-neutral-400" : "text-neutral-600"}`}>
+                  Allows access to study tools or secondary sites (e.g. YouTube, Instagram) while showing active distraction countdowns and tracking every second spent.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* SECTION 1: LAST COMPLETED SESSION */}
         <section className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-300 flex items-center gap-2">
-              <span>⏱️</span>
+            <h3
+              className={`text-xs font-bold uppercase tracking-wider flex items-center gap-2 ${
+                isDark ? "text-neutral-400" : "text-neutral-500"
+              }`}
+            >
+              <IconClock className="w-3.5 h-3.5" />
               <span>Last Completed Session</span>
             </h3>
             {lastSession && (
-              <span className="text-xs text-zinc-500">
-                Completed {formatDate(lastSession.endedAt)}
+              <span className={`text-xs ${isDark ? "text-neutral-500" : "text-neutral-400"}`}>
+                Finished {formatDate(lastSession.endedAt)}
               </span>
             )}
           </div>
 
           {lastSession ? (
-            <div className="rounded-2xl bg-zinc-900/60 border border-zinc-800 p-6 space-y-4">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-800/80 pb-4">
+            <div
+              className={`rounded-2xl border p-6 space-y-4 transition-colors ${
+                isDark
+                  ? "bg-neutral-900/50 border-neutral-800"
+                  : "bg-white border-neutral-200 shadow-sm"
+              }`}
+            >
+              <div
+                className={`flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4 ${
+                  isDark ? "border-neutral-800" : "border-neutral-100"
+                }`}
+              >
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-zinc-800 flex items-center justify-center text-xl font-mono font-bold text-white">
-                    {lastSession.mode === "block" ? "🔒" : "⏱️"}
+                  <div
+                    className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg border ${
+                      isDark
+                        ? "bg-neutral-850 border-neutral-750 text-neutral-100"
+                        : "bg-neutral-100 border-neutral-200 text-neutral-900"
+                    }`}
+                  >
+                    {lastSession.mode === "block" ? (
+                      <IconShield className="w-5 h-5 text-rose-500" />
+                    ) : (
+                      <IconClock className="w-5 h-5 text-amber-500" />
+                    )}
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-lg text-white">
+                      <span className="font-bold text-lg">
                         {formatDuration(lastSession.duration)}
                       </span>
                       <span
-                        className={`text-[11px] font-semibold uppercase px-2 py-0.5 rounded-md ${
+                        className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-md border ${
                           lastSession.mode === "block"
-                            ? "bg-rose-500/10 text-rose-400 border border-rose-500/20"
-                            : "bg-purple-500/10 text-purple-400 border border-purple-500/20"
+                            ? isDark
+                              ? "bg-rose-500/10 text-rose-300 border-rose-500/20"
+                              : "bg-rose-50 text-rose-700 border-rose-200"
+                            : isDark
+                              ? "bg-amber-500/10 text-amber-300 border-amber-500/20"
+                              : "bg-amber-50 text-amber-700 border-amber-200"
                         }`}
                       >
                         {lastSession.mode} mode
                       </span>
                     </div>
-                    <p className="text-xs text-zinc-400 mt-0.5">
+                    <p className={`text-xs mt-0.5 ${isDark ? "text-neutral-400" : "text-neutral-500"}`}>
                       {formatDate(lastSession.startedAt)} → {formatDate(lastSession.endedAt)}
                     </p>
                   </div>
                 </div>
 
-                {/* Last Session Efficiency Badge */}
+                {/* Efficiency Badge */}
                 <div className="flex items-center gap-3">
                   <div className="text-right">
-                    <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-semibold block">
+                    <span
+                      className={`text-[10px] uppercase tracking-wider font-semibold block ${
+                        isDark ? "text-neutral-500" : "text-neutral-400"
+                      }`}
+                    >
                       Session Efficiency
                     </span>
-                    <span className="text-xl font-bold font-mono text-white">
+                    <span className="text-xl font-bold font-mono">
                       {lastSessionEfficiency}%
                     </span>
                   </div>
                   <div
                     className={`px-3 py-1.5 rounded-xl text-xs font-semibold border ${
                       lastSessionIsClean
-                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                        ? isDark
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                          : "bg-emerald-50 text-emerald-700 border-emerald-200"
                         : lastSessionEfficiency >= 75
-                        ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                        : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                          ? isDark
+                            ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                            : "bg-amber-50 text-amber-700 border-amber-200"
+                          : isDark
+                            ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                            : "bg-rose-50 text-rose-700 border-rose-200"
                     }`}
                   >
                     {lastSessionIsClean
-                      ? "Clean Focus 🌟"
+                      ? "Clean Sprint ✨"
                       : lastSessionEfficiency >= 75
-                      ? "Minor Distraction"
-                      : "Interrupted"}
+                        ? "Minor Distraction"
+                        : "Interrupted"}
                   </div>
                 </div>
               </div>
 
-              {/* Distraction breakdown for last session */}
+              {/* Distractions breakdown for last session */}
               <div className="space-y-2">
-                <span className="text-xs font-medium text-zinc-400 block">
+                <span className={`text-xs font-medium block ${isDark ? "text-neutral-400" : "text-neutral-500"}`}>
                   Distractions During Last Session:
                 </span>
                 {lastSessionIsClean ? (
-                  <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/5 border border-emerald-500/20 p-2.5 rounded-xl">
-                    <span>✨</span>
-                    <span>No restricted websites visited! Perfect focus sprint logged.</span>
+                  <div
+                    className={`flex items-center gap-2 text-xs p-3 rounded-xl border ${
+                      isDark
+                        ? "bg-emerald-500/5 text-emerald-400 border-emerald-500/20"
+                        : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    }`}
+                  >
+                    <IconCheckCircle className="w-4 h-4 shrink-0" />
+                    <span>Zero distracting websites accessed! Perfect sprint recorded.</span>
                   </div>
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(lastSession.siteUsage ?? {}).map(([dom, dur]) => (
                       <span
                         key={dom}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-zinc-800 text-zinc-200 text-xs border border-zinc-700/60"
+                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs border ${
+                          isDark
+                            ? "bg-neutral-800 text-neutral-200 border-neutral-700"
+                            : "bg-neutral-100 text-neutral-800 border-neutral-200"
+                        }`}
                       >
                         <span className="font-semibold">{dom}:</span>
-                        <span className="font-mono text-amber-400">{formatDuration(dur)}</span>
+                        <span className="font-mono text-amber-500 dark:text-amber-400 font-bold">
+                          {formatDuration(dur)}
+                        </span>
                       </span>
                     ))}
                   </div>
@@ -482,62 +946,96 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <div className="rounded-2xl bg-zinc-900/40 border border-zinc-800/80 p-8 text-center space-y-2">
-              <span className="text-2xl">⏳</span>
-              <p className="text-sm font-semibold text-zinc-300">No sessions completed yet</p>
-              <p className="text-xs text-zinc-500 max-w-sm mx-auto">
-                Once you finish your first focus sprint by clicking "Start Focus" and "Stop Focus", your last session breakdown will appear here.
+            <div
+              className={`rounded-2xl border p-8 text-center space-y-2 transition-colors ${
+                isDark
+                  ? "bg-neutral-900/30 border-neutral-800"
+                  : "bg-white border-neutral-200"
+              }`}
+            >
+              <div className="w-10 h-10 rounded-full mx-auto flex items-center justify-center bg-neutral-100 dark:bg-neutral-800 text-neutral-500">
+                <IconClock className="w-5 h-5" />
+              </div>
+              <p className="text-sm font-semibold">No sessions completed yet</p>
+              <p className={`text-xs max-w-sm mx-auto ${isDark ? "text-neutral-500" : "text-neutral-400"}`}>
+                Start a sprint above to log your first focus analytics.
               </p>
             </div>
           )}
         </section>
 
-        {/* SECTION 2: 30-DAY KEY METRICS (Longest Clean Session & Most Distracting App) */}
+        {/* SECTION 2: 30-DAY KEY METRICS */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Card 1: Longest Clean Session */}
-          <div className="rounded-2xl bg-zinc-900/60 border border-zinc-800 p-5 space-y-2 hover:border-zinc-700/60 transition-colors">
-            <div className="flex items-center justify-between text-zinc-400">
-              <span className="text-xs font-semibold uppercase tracking-wider">
+          <div
+            className={`rounded-2xl border p-5 space-y-2 transition-all ${
+              isDark
+                ? "bg-neutral-900/50 border-neutral-800 hover:border-neutral-700"
+                : "bg-white border-neutral-200 hover:border-neutral-300 shadow-sm"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span
+                className={`text-xs font-semibold uppercase tracking-wider ${
+                  isDark ? "text-neutral-400" : "text-neutral-500"
+                }`}
+              >
                 Longest Clean Session
               </span>
-              <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 text-sm">
-                🏆
-              </span>
+              <div
+                className={`p-1.5 rounded-lg ${
+                  isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-700"
+                }`}
+              >
+                <IconTrophy className="w-4 h-4" />
+              </div>
             </div>
-            <div className="text-2xl font-bold font-mono text-white tracking-tight">
+            <div className="text-2xl font-bold font-mono tracking-tight">
               {longestCleanSession ? formatDuration(longestCleanSession.duration) : "0s"}
             </div>
-            <p className="text-xs text-zinc-500">
+            <p className={`text-xs ${isDark ? "text-neutral-500" : "text-neutral-400"}`}>
               {longestCleanSession ? (
-                <>
-                  Achieved on {formatDate(longestCleanSession.startedAt)} • Zero distractions
-                </>
+                <>Achieved on {formatDate(longestCleanSession.startedAt)}</>
               ) : (
-                "Finish a session with 0 distractions to set your record"
+                "Finish a session with 0 distractions"
               )}
             </p>
           </div>
 
-          {/* Card 2: Most Distracting Website */}
-          <div className="rounded-2xl bg-zinc-900/60 border border-zinc-800 p-5 space-y-2 hover:border-zinc-700/60 transition-colors">
-            <div className="flex items-center justify-between text-zinc-400">
-              <span className="text-xs font-semibold uppercase tracking-wider">
+          {/* Card 2: Top Distraction */}
+          <div
+            className={`rounded-2xl border p-5 space-y-2 transition-all ${
+              isDark
+                ? "bg-neutral-900/50 border-neutral-800 hover:border-neutral-700"
+                : "bg-white border-neutral-200 hover:border-neutral-300 shadow-sm"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span
+                className={`text-xs font-semibold uppercase tracking-wider ${
+                  isDark ? "text-neutral-400" : "text-neutral-500"
+                }`}
+              >
                 Top Distraction
               </span>
-              <span className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400 text-sm">
-                ⚠️
-              </span>
+              <div
+                className={`p-1.5 rounded-lg ${
+                  isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-700"
+                }`}
+              >
+                <IconAlertTriangle className="w-4 h-4" />
+              </div>
             </div>
-            <div className="text-2xl font-bold text-white tracking-tight truncate">
+            <div className="text-2xl font-bold tracking-tight truncate">
               {topDistractingApp ? topDistractingApp[0] : "None"}
             </div>
-            <p className="text-xs text-zinc-500">
+            <p className={`text-xs ${isDark ? "text-neutral-500" : "text-neutral-400"}`}>
               {topDistractingApp ? (
                 <>
-                  <span className="font-mono text-amber-400">
+                  <span className="font-mono text-amber-500 font-semibold">
                     {formatShortDuration(topDistractingApp[1].totalDuration)}
                   </span>{" "}
-                  wasted across {topDistractingApp[1].sessionCount} session
+                  across {topDistractingApp[1].sessionCount} session
                   {topDistractingApp[1].sessionCount === 1 ? "" : "s"}
                 </>
               ) : (
@@ -547,87 +1045,135 @@ export default function App() {
           </div>
 
           {/* Card 3: Total 30-Day Focus Time */}
-          <div className="rounded-2xl bg-zinc-900/60 border border-zinc-800 p-5 space-y-2 hover:border-zinc-700/60 transition-colors">
-            <div className="flex items-center justify-between text-zinc-400">
-              <span className="text-xs font-semibold uppercase tracking-wider">
+          <div
+            className={`rounded-2xl border p-5 space-y-2 transition-all ${
+              isDark
+                ? "bg-neutral-900/50 border-neutral-800 hover:border-neutral-700"
+                : "bg-white border-neutral-200 hover:border-neutral-300 shadow-sm"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span
+                className={`text-xs font-semibold uppercase tracking-wider ${
+                  isDark ? "text-neutral-400" : "text-neutral-500"
+                }`}
+              >
                 Total Focus (30d)
               </span>
-              <span className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 text-sm">
-                ⏱️
-              </span>
+              <div
+                className={`p-1.5 rounded-lg ${
+                  isDark ? "bg-neutral-800 text-neutral-300" : "bg-neutral-100 text-neutral-700"
+                }`}
+              >
+                <IconClock className="w-4 h-4" />
+              </div>
             </div>
-            <div className="text-2xl font-bold font-mono text-white tracking-tight">
+            <div className="text-2xl font-bold font-mono tracking-tight">
               {formatDuration(totalFocusDurationMs)}
             </div>
-            <p className="text-xs text-zinc-500">
+            <p className={`text-xs ${isDark ? "text-neutral-500" : "text-neutral-400"}`}>
               Across {sessions.length} session{sessions.length === 1 ? "" : "s"}
             </p>
           </div>
 
           {/* Card 4: Overall Focus Efficiency */}
-          <div className="rounded-2xl bg-zinc-900/60 border border-zinc-800 p-5 space-y-2 hover:border-zinc-700/60 transition-colors">
-            <div className="flex items-center justify-between text-zinc-400">
-              <span className="text-xs font-semibold uppercase tracking-wider">
+          <div
+            className={`rounded-2xl border p-5 space-y-2 transition-all ${
+              isDark
+                ? "bg-neutral-900/50 border-neutral-800 hover:border-neutral-700"
+                : "bg-white border-neutral-200 hover:border-neutral-300 shadow-sm"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span
+                className={`text-xs font-semibold uppercase tracking-wider ${
+                  isDark ? "text-neutral-400" : "text-neutral-500"
+                }`}
+              >
                 Efficiency (30d)
               </span>
-              <span className="p-1.5 rounded-lg bg-purple-500/10 text-purple-400 text-sm">
-                🎯
-              </span>
+              <div
+                className={`p-1.5 rounded-lg ${
+                  isDark ? "bg-neutral-800 text-neutral-300" : "bg-neutral-100 text-neutral-700"
+                }`}
+              >
+                <IconTarget className="w-4 h-4" />
+              </div>
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold font-mono text-white tracking-tight">
+              <span className="text-2xl font-bold font-mono tracking-tight">
                 {overallEfficiency}%
               </span>
               <span
-                className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
                   overallEfficiency >= 85
-                    ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                    ? isDark
+                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                      : "bg-emerald-50 text-emerald-700 border-emerald-200"
                     : overallEfficiency >= 60
-                    ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                    : "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                      ? isDark
+                        ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                        : "bg-amber-50 text-amber-700 border-amber-200"
+                      : isDark
+                        ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                        : "bg-rose-50 text-rose-700 border-rose-200"
                 }`}
               >
                 {overallEfficiency >= 85
                   ? "Optimal"
                   : overallEfficiency >= 60
-                  ? "Moderate"
-                  : "Distracted"}
+                    ? "Moderate"
+                    : "Distracted"}
               </span>
             </div>
-            <p className="text-xs text-zinc-500">
-              {formatShortDuration(totalDistractionMs)} total distraction
+            <p className={`text-xs ${isDark ? "text-neutral-500" : "text-neutral-400"}`}>
+              {totalDistractionMs === 0 ? "Zero distractions logged" : `${formatDuration(totalDistractionMs)} total distraction`}
             </p>
           </div>
         </section>
 
-        {/* SECTION 3: BAR GRAPH - DAILY ACTIVITY (14 DAYS) */}
-        <section className="rounded-2xl bg-zinc-900/60 border border-zinc-800 p-6 space-y-5">
+        {/* SECTION 3: DAILY FOCUS & DISTRACTION ACTIVITY (14 DAYS) */}
+        <section
+          className={`rounded-2xl border p-6 space-y-5 transition-colors ${
+            isDark
+              ? "bg-neutral-900/50 border-neutral-800"
+              : "bg-white border-neutral-200 shadow-sm"
+          }`}
+        >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
-              <h3 className="font-bold text-base text-white flex items-center gap-2">
-                <span>📊</span>
+              <h3 className="font-bold text-base flex items-center gap-2">
+                <IconBarChart className="w-4 h-4 text-neutral-400" />
                 <span>Daily Focus & Distraction Activity</span>
               </h3>
-              <p className="text-xs text-zinc-400">
+              <p className={`text-xs ${isDark ? "text-neutral-400" : "text-neutral-600"}`}>
                 Focus time vs. restricted app distractions over the last 14 days
               </p>
             </div>
 
-            <div className="flex items-center gap-4 text-xs">
+            <div className="flex items-center gap-4 text-xs font-medium">
               <div className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded bg-indigo-500"></span>
-                <span className="text-zinc-300">Focus Time</span>
+                <span
+                  className={`w-3 h-3 rounded ${
+                    isDark ? "bg-neutral-200" : "bg-neutral-900"
+                  }`}
+                ></span>
+                <span className={isDark ? "text-neutral-300" : "text-neutral-700"}>Focus Time</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded bg-amber-500"></span>
-                <span className="text-zinc-300">Distraction Time</span>
+                <span className={isDark ? "text-neutral-300" : "text-neutral-700"}>Distraction</span>
               </div>
             </div>
           </div>
 
           {/* Bar Chart Container */}
           <div className="pt-4 pb-2">
-            <div className="flex items-end justify-between gap-2 h-44 border-b border-zinc-800 pb-2 px-1">
+            <div
+              className={`flex items-end justify-between gap-2 h-44 border-b pb-2 px-1 ${
+                isDark ? "border-neutral-800" : "border-neutral-200"
+              }`}
+            >
               {dailyBarData.map((day, idx) => {
                 const focusHeightPct = Math.max(
                   4,
@@ -644,11 +1190,17 @@ export default function App() {
                     className="flex-1 flex flex-col items-center h-full justify-end group relative"
                   >
                     {/* Tooltip on hover */}
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-12 z-20 pointer-events-none bg-zinc-900 border border-zinc-700 text-zinc-200 text-[10px] rounded-lg px-2 py-1 shadow-lg whitespace-nowrap">
-                      <div className="font-semibold text-white">{day.dayLabel} ({day.dateStr})</div>
+                    <div
+                      className={`opacity-0 group-hover:opacity-100 transition-opacity absolute -top-12 z-20 pointer-events-none border text-[10px] rounded-lg px-2.5 py-1.5 shadow-lg whitespace-nowrap ${
+                        isDark
+                          ? "bg-neutral-900 border-neutral-700 text-neutral-200"
+                          : "bg-white border-neutral-300 text-neutral-800"
+                      }`}
+                    >
+                      <div className="font-semibold">{day.dayLabel} ({day.dateStr})</div>
                       <div>Focus: {day.focusMinutes}m</div>
                       {day.distractionMinutes > 0 && (
-                        <div className="text-amber-400">Distracted: {day.distractionMinutes}m</div>
+                        <div className="text-amber-500 font-medium">Distracted: {day.distractionMinutes}m</div>
                       )}
                     </div>
 
@@ -659,10 +1211,12 @@ export default function App() {
                         style={{ height: `${day.focusMinutes > 0 ? focusHeightPct : 4}%` }}
                         className={`w-1/2 rounded-t-sm transition-all duration-300 ${
                           day.focusMinutes > 0
-                            ? day.isToday
-                              ? "bg-indigo-500 group-hover:bg-indigo-400"
-                              : "bg-indigo-600/80 group-hover:bg-indigo-500"
-                            : "bg-zinc-800/40"
+                            ? isDark
+                              ? "bg-neutral-200 group-hover:bg-white"
+                              : "bg-neutral-900 group-hover:bg-neutral-750"
+                            : isDark
+                              ? "bg-neutral-800/40"
+                              : "bg-neutral-200/50"
                         }`}
                       />
                       {/* Distraction bar */}
@@ -673,7 +1227,9 @@ export default function App() {
                         className={`w-1/2 rounded-t-sm transition-all duration-300 ${
                           day.distractionMinutes > 0
                             ? "bg-amber-500 group-hover:bg-amber-400"
-                            : "bg-zinc-800/40"
+                            : isDark
+                              ? "bg-neutral-800/40"
+                              : "bg-neutral-200/50"
                         }`}
                       />
                     </div>
@@ -682,12 +1238,22 @@ export default function App() {
                     <div className="mt-2 text-center">
                       <span
                         className={`text-[10px] font-mono block leading-none ${
-                          day.isToday ? "text-indigo-400 font-bold" : "text-zinc-500"
+                          day.isToday
+                            ? isDark
+                              ? "text-neutral-100 font-bold"
+                              : "text-neutral-950 font-bold"
+                            : isDark
+                              ? "text-neutral-500"
+                              : "text-neutral-400"
                         }`}
                       >
                         {day.dayLabel}
                       </span>
-                      <span className="text-[9px] text-zinc-600 font-mono block mt-0.5">
+                      <span
+                        className={`text-[9px] font-mono block mt-0.5 ${
+                          isDark ? "text-neutral-600" : "text-neutral-400"
+                        }`}
+                      >
                         {day.dateStr}
                       </span>
                     </div>
@@ -698,41 +1264,49 @@ export default function App() {
           </div>
         </section>
 
-        {/* SECTION 4: RESTRICTED APPS 30-DAY ANALYTICS & BREAKDOWN */}
+        {/* SECTION 4: RESTRICTED APPS & RULES */}
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column: Restricted Apps Usage (Horizontal Bar Chart) */}
-          <div className="lg:col-span-2 rounded-2xl bg-zinc-900/60 border border-zinc-800 p-6 space-y-6">
+          {/* Left Column: Restricted Apps Breakdown */}
+          <div
+            className={`lg:col-span-2 rounded-2xl border p-6 space-y-6 transition-colors ${
+              isDark
+                ? "bg-neutral-900/50 border-neutral-800"
+                : "bg-white border-neutral-200 shadow-sm"
+            }`}
+          >
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-bold text-base text-white flex items-center gap-2">
-                  <span>📱</span>
-                  <span>Restricted Apps Analytics (Last 30 Days)</span>
+                <h3 className="font-bold text-base flex items-center gap-2">
+                  <IconAlertTriangle className="w-4 h-4 text-amber-500" />
+                  <span>Restricted Apps Usage (Last 30 Days)</span>
                 </h3>
-                <p className="text-xs text-zinc-400">
-                  Total time spent on distraction-prone websites during focus mode
+                <p className={`text-xs ${isDark ? "text-neutral-400" : "text-neutral-600"}`}>
+                  Time spent on monitored domains during focus sessions
                 </p>
               </div>
-              <span className="text-xs text-zinc-500 font-medium">
+              <span className={`text-xs font-medium ${isDark ? "text-neutral-500" : "text-neutral-400"}`}>
                 {sortedRestrictedSites.length} domain{sortedRestrictedSites.length === 1 ? "" : "s"} tracked
               </span>
             </div>
 
             {sortedRestrictedSites.length === 0 ? (
               <div className="py-12 text-center space-y-3">
-                <div className="w-12 h-12 rounded-2xl bg-zinc-800 mx-auto flex items-center justify-center text-xl">
-                  ✨
+                <div
+                  className={`w-12 h-12 rounded-2xl mx-auto flex items-center justify-center text-xl border ${
+                    isDark ? "bg-neutral-800 border-neutral-700" : "bg-neutral-100 border-neutral-200"
+                  }`}
+                >
+                  <IconCheckCircle className="w-6 h-6 text-emerald-500" />
                 </div>
                 <div className="space-y-1">
-                  <p className="text-sm font-semibold text-zinc-300">
-                    No restricted app usage in the last 30 days!
-                  </p>
-                  <p className="text-xs text-zinc-500 max-w-sm mx-auto">
-                    When you access restricted sites like YouTube or Instagram during focus sessions, their duration and visit frequency will be tracked here.
+                  <p className="text-sm font-semibold">No distractions logged in 30 days!</p>
+                  <p className={`text-xs max-w-sm mx-auto ${isDark ? "text-neutral-500" : "text-neutral-400"}`}>
+                    Visits to restricted websites like YouTube or Instagram during active sprints will be graphed here.
                   </p>
                 </div>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {sortedRestrictedSites.map(([domain, stats]) => {
                   const pct =
                     totalDistractionMs > 0
@@ -743,37 +1317,52 @@ export default function App() {
                       : 0;
 
                   return (
-                    <div key={domain} className="space-y-2 p-3 rounded-xl bg-zinc-850/30 border border-zinc-800/60">
+                    <div
+                      key={domain}
+                      className={`space-y-2 p-3.5 rounded-xl border transition-colors ${
+                        isDark
+                          ? "bg-neutral-850/40 border-neutral-800"
+                          : "bg-neutral-50 border-neutral-200/80"
+                      }`}
+                    >
                       <div className="flex items-center justify-between text-xs">
                         <div className="flex items-center gap-2.5">
-                          <span className="w-7 h-7 rounded-lg bg-zinc-800 text-zinc-200 font-bold flex items-center justify-center text-xs">
+                          <span
+                            className={`w-7 h-7 rounded-lg font-bold flex items-center justify-center text-xs border ${
+                              isDark
+                                ? "bg-neutral-800 border-neutral-700 text-neutral-200"
+                                : "bg-white border-neutral-200 text-neutral-800"
+                            }`}
+                          >
                             {domain.charAt(0).toUpperCase()}
                           </span>
                           <div>
-                            <span className="font-semibold text-zinc-100 text-sm block">
-                              {domain}
-                            </span>
-                            <span className="text-[11px] text-zinc-400">
-                              Logged in {stats.sessionCount} focus session
+                            <span className="font-semibold block">{domain}</span>
+                            <span className={`text-[11px] ${isDark ? "text-neutral-400" : "text-neutral-500"}`}>
+                              Logged in {stats.sessionCount} focus sprint
                               {stats.sessionCount === 1 ? "" : "s"}
                             </span>
                           </div>
                         </div>
 
                         <div className="text-right">
-                          <span className="font-mono text-sm font-bold text-white block">
+                          <span className="font-mono text-sm font-bold block">
                             {formatDuration(stats.totalDuration)}
                           </span>
-                          <span className="text-xs text-amber-400 font-medium">
-                            {pct}% of all distractions
+                          <span className="text-xs text-amber-500 font-medium">
+                            {pct}% of distractions
                           </span>
                         </div>
                       </div>
 
                       {/* Bar indicator */}
-                      <div className="h-2 w-full bg-zinc-800 rounded-full overflow-hidden">
+                      <div
+                        className={`h-1.5 w-full rounded-full overflow-hidden ${
+                          isDark ? "bg-neutral-800" : "bg-neutral-200"
+                        }`}
+                      >
                         <div
-                          className="h-full bg-gradient-to-r from-amber-500 to-rose-500 rounded-full transition-all duration-500"
+                          className="h-full bg-amber-500 rounded-full transition-all duration-500"
                           style={{ width: `${pct}%` }}
                         />
                       </div>
@@ -785,40 +1374,60 @@ export default function App() {
           </div>
 
           {/* Right Column: Protected Domains & Retention Policy */}
-          <div className="rounded-2xl bg-zinc-900/60 border border-zinc-800 p-6 space-y-6">
+          <div
+            className={`rounded-2xl border p-6 space-y-6 transition-colors ${
+              isDark
+                ? "bg-neutral-900/50 border-neutral-800"
+                : "bg-white border-neutral-200 shadow-sm"
+            }`}
+          >
             <div>
-              <h3 className="font-bold text-base text-white">Focus Rules & Retention</h3>
-              <p className="text-xs text-zinc-400">
-                Extension policies & tracked domains
+              <h3 className="font-bold text-base flex items-center gap-2">
+                <IconShield className="w-4 h-4 text-neutral-400" />
+                <span>Focus Rules & Retention</span>
+              </h3>
+              <p className={`text-xs ${isDark ? "text-neutral-400" : "text-neutral-600"}`}>
+                Monitored lists & storage policy
               </p>
             </div>
 
             <div className="space-y-4">
               {/* Retention notice */}
-              <div className="p-3.5 rounded-xl bg-zinc-850/60 border border-zinc-800 text-xs text-zinc-300 space-y-1">
-                <div className="flex items-center gap-1.5 font-semibold text-white">
-                  <span>📅</span>
-                  <span>30-Day Storage Policy</span>
+              <div
+                className={`p-3.5 rounded-xl border text-xs space-y-1 ${
+                  isDark
+                    ? "bg-neutral-850/60 border-neutral-800 text-neutral-300"
+                    : "bg-neutral-50 border-neutral-200 text-neutral-700"
+                }`}
+              >
+                <div className="font-semibold flex items-center gap-1.5">
+                  <span>Automatic 30-Day Retention</span>
                 </div>
-                <p className="text-zinc-400">
-                  Data is automatically pruned so only sessions from the last 30 days are retained, keeping your extension lightweight and fast.
+                <p className={isDark ? "text-neutral-400" : "text-neutral-500"}>
+                  Older sessions are pruned after 30 days to keep your browser fast, private, and lightweight.
                 </p>
               </div>
 
-              {/* Restricted Sites */}
+              {/* Blocked Sites */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs font-semibold text-zinc-300">
+                <div className="flex items-center justify-between text-xs font-semibold">
                   <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-                    Restricted Sites
+                    <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                    <span>Hard Blocked Sites</span>
                   </span>
-                  <span className="text-[11px] text-zinc-500 font-normal">Shows banner & timers</span>
+                  <span className={`text-[10px] ${isDark ? "text-neutral-500" : "text-neutral-400"}`}>
+                    Full lockout
+                  </span>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {(data.restrictedSites ?? ["youtube.com", "instagram.com"]).map((site) => (
+                <div className="flex flex-wrap gap-1.5">
+                  {(data.blockedSites ?? ["twitter.com"]).map((site) => (
                     <span
                       key={site}
-                      className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-300 border border-zinc-700/60 font-mono"
+                      className={`text-xs px-2.5 py-1 rounded-lg border font-mono ${
+                        isDark
+                          ? "bg-neutral-800 text-neutral-300 border-neutral-700"
+                          : "bg-neutral-100 text-neutral-800 border-neutral-200"
+                      }`}
                     >
                       {site}
                     </span>
@@ -826,20 +1435,26 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Blocked Sites */}
+              {/* Restricted Sites */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs font-semibold text-zinc-300">
+                <div className="flex items-center justify-between text-xs font-semibold">
                   <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-rose-400"></span>
-                    Hard Blocked Sites
+                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                    <span>Restricted Sites</span>
                   </span>
-                  <span className="text-[11px] text-zinc-500 font-normal">Full lockout screen</span>
+                  <span className={`text-[10px] ${isDark ? "text-neutral-500" : "text-neutral-400"}`}>
+                    Distraction banner
+                  </span>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {(data.blockedSites ?? ["twitter.com"]).map((site) => (
+                <div className="flex flex-wrap gap-1.5">
+                  {(data.restrictedSites ?? ["youtube.com", "instagram.com"]).map((site) => (
                     <span
                       key={site}
-                      className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-300 border border-zinc-700/60 font-mono"
+                      className={`text-xs px-2.5 py-1 rounded-lg border font-mono ${
+                        isDark
+                          ? "bg-neutral-800 text-neutral-300 border-neutral-700"
+                          : "bg-neutral-100 text-neutral-800 border-neutral-200"
+                      }`}
                     >
                       {site}
                     </span>
@@ -851,26 +1466,40 @@ export default function App() {
         </section>
 
         {/* SECTION 5: 30-DAY SESSION HISTORY TABLE */}
-        <section className="rounded-2xl bg-zinc-900/60 border border-zinc-800 p-6 space-y-6">
+        <section
+          className={`rounded-2xl border p-6 space-y-6 transition-colors ${
+            isDark
+              ? "bg-neutral-900/50 border-neutral-800"
+              : "bg-white border-neutral-200 shadow-sm"
+          }`}
+        >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h3 className="font-bold text-base text-white">30-Day Session History</h3>
-              <p className="text-xs text-zinc-400">
-                Detailed timeline of focus sprints recorded in the last 30 days
+              <h3 className="font-bold text-base">30-Day Session History</h3>
+              <p className={`text-xs ${isDark ? "text-neutral-400" : "text-neutral-600"}`}>
+                Complete record of focus sprints logged over the last month
               </p>
             </div>
 
             <div className="flex items-center gap-3">
               {/* Filter Tabs */}
-              <div className="flex rounded-xl bg-zinc-850 p-1 border border-zinc-800 text-xs">
-                {(["all", "restrict", "block"] as const).map((mode) => (
+              <div
+                className={`flex rounded-xl p-0.5 border text-xs ${
+                  isDark ? "bg-neutral-900 border-neutral-800" : "bg-neutral-100 border-neutral-200"
+                }`}
+              >
+                {(["all", "block", "restrict"] as const).map((mode) => (
                   <button
                     key={mode}
                     onClick={() => setFilterMode(mode)}
                     className={`px-3 py-1 rounded-lg capitalize font-medium transition-all cursor-pointer ${
                       filterMode === mode
-                        ? "bg-zinc-700 text-white shadow-sm"
-                        : "text-zinc-400 hover:text-zinc-200"
+                        ? isDark
+                          ? "bg-neutral-800 text-white shadow-sm border border-neutral-700"
+                          : "bg-white text-neutral-950 shadow-sm border border-neutral-300"
+                        : isDark
+                          ? "text-neutral-400 hover:text-neutral-200"
+                          : "text-neutral-500 hover:text-neutral-900"
                     }`}
                   >
                     {mode}
@@ -881,9 +1510,14 @@ export default function App() {
               {sessions.length > 0 && (
                 <button
                   onClick={() => setShowClearConfirm(true)}
-                  className="text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border border-rose-500/20 px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
+                  className={`text-xs px-3 py-1.5 rounded-xl border flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    isDark
+                      ? "text-rose-400 hover:bg-rose-500/10 border-rose-500/20"
+                      : "text-rose-600 hover:bg-rose-50 border-rose-200"
+                  }`}
                 >
-                  Clear History
+                  <IconTrash className="w-3.5 h-3.5" />
+                  <span>Clear History</span>
                 </button>
               )}
             </div>
@@ -891,57 +1525,81 @@ export default function App() {
 
           {filteredSessions.length === 0 ? (
             <div className="py-14 text-center space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-zinc-800 mx-auto flex items-center justify-center text-xl">
-                📜
+              <div
+                className={`w-12 h-12 rounded-2xl mx-auto flex items-center justify-center text-xl border ${
+                  isDark ? "bg-neutral-800 border-neutral-700" : "bg-neutral-100 border-neutral-200"
+                }`}
+              >
+                <IconClock className="w-5 h-5 text-neutral-400" />
               </div>
-              <p className="text-sm font-semibold text-zinc-300">No session history found</p>
-              <p className="text-xs text-zinc-500 max-w-sm mx-auto">
-                Completed focus sessions will be automatically stored and listed here.
+              <p className="text-sm font-semibold">No session history found</p>
+              <p className={`text-xs max-w-sm mx-auto ${isDark ? "text-neutral-500" : "text-neutral-400"}`}>
+                Your completed sprints will be stored and listed here.
               </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-zinc-800 text-zinc-400 uppercase tracking-wider font-semibold">
+                  <tr
+                    className={`border-b uppercase tracking-wider font-semibold ${
+                      isDark ? "border-neutral-800 text-neutral-400" : "border-neutral-200 text-neutral-500"
+                    }`}
+                  >
                     <th className="py-3 px-4">Date & Time</th>
                     <th className="py-3 px-4">Mode</th>
                     <th className="py-3 px-4">Duration</th>
                     <th className="py-3 px-4">Distractions Recorded</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-800/60">
+                <tbody className={`divide-y ${isDark ? "divide-neutral-800/60" : "divide-neutral-100"}`}>
                   {filteredSessions.map((session, idx) => {
                     const sessionDistractionEntries = Object.entries(session.siteUsage || {});
 
                     return (
-                      <tr key={idx} className="hover:bg-zinc-850/40 transition-colors">
-                        <td className="py-3.5 px-4 font-medium text-zinc-200">
+                      <tr
+                        key={idx}
+                        className={`transition-colors ${
+                          isDark ? "hover:bg-neutral-850/50" : "hover:bg-neutral-50"
+                        }`}
+                      >
+                        <td className="py-3.5 px-4 font-medium">
                           {formatDate(session.startedAt)}
                         </td>
                         <td className="py-3.5 px-4">
                           <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-md font-medium text-[11px] capitalize ${
+                            className={`inline-flex items-center px-2 py-0.5 rounded-md font-medium text-[11px] capitalize border ${
                               session.mode === "block"
-                                ? "bg-rose-500/10 text-rose-300 border border-rose-500/20"
-                                : "bg-purple-500/10 text-purple-300 border border-purple-500/20"
+                                ? isDark
+                                  ? "bg-rose-500/10 text-rose-300 border-rose-500/20"
+                                  : "bg-rose-50 text-rose-700 border-rose-200"
+                                : isDark
+                                  ? "bg-amber-500/10 text-amber-300 border-amber-500/20"
+                                  : "bg-amber-50 text-amber-700 border-amber-200"
                             }`}
                           >
                             {session.mode}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 font-mono font-semibold text-zinc-200">
+                        <td className="py-3.5 px-4 font-mono font-semibold">
                           {formatDuration(session.duration)}
                         </td>
                         <td className="py-3.5 px-4">
                           {sessionDistractionEntries.length === 0 ? (
-                            <span className="text-emerald-400 font-medium">Clean Focus 🌟</span>
+                            <span className="text-emerald-500 font-medium flex items-center gap-1">
+                              <IconCheckCircle className="w-3.5 h-3.5" />
+                              <span>Clean Focus</span>
+                            </span>
                           ) : (
                             <div className="flex flex-wrap gap-1.5">
                               {sessionDistractionEntries.map(([dom, dur]) => (
                                 <span
                                   key={dom}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 text-[11px]"
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] border ${
+                                    isDark
+                                      ? "bg-neutral-800 text-neutral-300 border-neutral-700"
+                                      : "bg-neutral-100 text-neutral-800 border-neutral-200"
+                                  }`}
                                 >
                                   <strong>{dom}:</strong> {formatDuration(dur)}
                                 </span>
@@ -959,18 +1617,26 @@ export default function App() {
         </section>
       </main>
 
-      {/* Confirmation Modal */}
+      {/* CONFIRMATION MODAL */}
       {showClearConfirm && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-2xl">
-            <h4 className="font-bold text-white text-base">Clear 30-Day History?</h4>
-            <p className="text-xs text-zinc-400">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div
+            className={`border rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-2xl transition-colors ${
+              isDark ? "bg-neutral-900 border-neutral-800" : "bg-white border-neutral-200"
+            }`}
+          >
+            <h4 className="font-bold text-base">Clear 30-Day History?</h4>
+            <p className={`text-xs ${isDark ? "text-neutral-400" : "text-neutral-600"}`}>
               Are you sure you want to delete all recorded focus sessions? This action cannot be undone.
             </p>
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 onClick={() => setShowClearConfirm(false)}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-zinc-300 hover:bg-zinc-800 cursor-pointer transition-colors"
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-colors ${
+                  isDark
+                    ? "text-neutral-300 hover:bg-neutral-800"
+                    : "text-neutral-700 hover:bg-neutral-100"
+                }`}
               >
                 Cancel
               </button>
@@ -985,9 +1651,13 @@ export default function App() {
         </div>
       )}
 
-      {/* Footer */}
-      <footer className="border-t border-zinc-800/60 py-6 text-center text-xs text-zinc-500">
-        Nudge Focus Extension • 30-Day Productivity Analytics
+      {/* FOOTER */}
+      <footer
+        className={`border-t py-6 text-center text-xs transition-colors ${
+          isDark ? "border-neutral-800/80 text-neutral-500" : "border-neutral-200 text-neutral-400"
+        }`}
+      >
+        Nudge Focus Extension • Neutral & Chic Productivity Analytics
       </footer>
     </div>
   );
