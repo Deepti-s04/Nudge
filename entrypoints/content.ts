@@ -305,6 +305,7 @@ export default defineContentScript({
     const visitStorageKey = `nudge_tab_visit_start_${hostname}`;
     const instanceStorageKey = `nudge_tab_instance_${hostname}`;
     const domainStartStorageKey = `nudge_tab_domain_start_${hostname}`;
+    const baseUsageStorageKey = `nudge_tab_base_usage_${hostname}`;
     const lastTickStorageKey = `nudge_tab_last_tick_${hostname}`;
 
     const getLastTick = (): number => {
@@ -366,6 +367,27 @@ export default defineContentScript({
       } catch {}
     };
 
+    const getStoredBaseUsage = (): number => {
+      try {
+        const val = sessionStorage.getItem(baseUsageStorageKey);
+        if (val) {
+          const num = parseInt(val, 10);
+          if (!isNaN(num) && num >= 0) return num;
+        }
+      } catch {}
+      return 0;
+    };
+
+    const persistBaseUsage = (usage: number) => {
+      try {
+        if (usage >= 0) {
+          sessionStorage.setItem(baseUsageStorageKey, String(usage));
+        } else {
+          sessionStorage.removeItem(baseUsageStorageKey);
+        }
+      } catch {}
+    };
+
     const getStoredTabInstanceId = (): string => {
       try {
         const val = sessionStorage.getItem(instanceStorageKey);
@@ -390,6 +412,7 @@ export default defineContentScript({
     if (!isRapidReload) {
       persistVisitStart(0);
       persistDomainStart(0);
+      persistBaseUsage(0);
     }
 
     const initialStoredVisit = isRapidReload ? getStoredVisitStart() : 0;
@@ -398,9 +421,8 @@ export default defineContentScript({
     const initialStoredDomain = isRapidReload ? getStoredDomainStart() : 0;
     let domainStartedAt = initialStoredDomain > 0 ? initialStoredDomain : visitStartedAt;
     persistDomainStart(domainStartedAt);
-    let baseSiteUsage = 0;        // Total duration (ms) from completed visits to this domain
+    let baseSiteUsage = isRapidReload ? getStoredBaseUsage() : 0; // Total duration (ms) from completed visits to this domain
     let sessionStartedAt = 0;     // Anchored timestamp when the focus session started
-    let responseTotalSiteUsageSec = -1;
     let isSyncing = false;
 
     // Per-tab persistent blocked state anchor (survives page refresh with 0ms flicker)
@@ -456,6 +478,35 @@ export default defineContentScript({
         }
       }
       return false;
+    }
+
+    function getMatchingSite(host: string, sites: string[]): string | null {
+      if (!host) return null;
+      const cleanHost = host.trim().toLowerCase().replace(/^www\./, "");
+      const cleanSites = sites
+        .map((s) =>
+          s
+            .trim()
+            .toLowerCase()
+            .replace(/^https?:\/\//, "")
+            .replace(/^www\./, "")
+            .replace(/[/?#].*$/, "")
+        )
+        .filter(Boolean);
+
+      if (cleanSites.includes("twitter.com") && !cleanSites.includes("x.com")) {
+        cleanSites.push("x.com");
+      }
+      if (cleanSites.includes("x.com") && !cleanSites.includes("twitter.com")) {
+        cleanSites.push("twitter.com");
+      }
+
+      for (const site of cleanSites) {
+        if (cleanHost === site || cleanHost.endsWith(`.${site}`)) {
+          return site;
+        }
+      }
+      return null;
     }
 
     const ensureDomInjected = () => {
@@ -822,21 +873,33 @@ export default defineContentScript({
             const storedStart = isRapidReload ? getStoredVisitStart() : 0;
             if (storedStart > 0 && (sStart === 0 || storedStart >= sStart)) {
               visitStartedAt = storedStart;
-            } else {
+            } else if (!visitStartedAt || visitStartedAt === 0) {
               visitStartedAt = pageLoadTime;
               persistVisitStart(visitStartedAt);
             }
 
-            const cleanSites = sites.map((s) => s.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/[/?#].*$/, ""));
-            const matched = cleanSites.find((s) => hostname === s || hostname.endsWith(`.${s}`)) || hostname;
+            const matched = getMatchingSite(hostname, sites) || hostname;
 
             const usage = data.sessionSiteUsage ?? {};
-            baseSiteUsage = usage[matched] ?? 0;
+            if (typeof usage[matched] === "number") {
+              baseSiteUsage = usage[matched];
+              persistBaseUsage(baseSiteUsage);
+            } else {
+              baseSiteUsage = 0;
+              persistBaseUsage(0);
+            }
 
-            const spans = data.domainSpans ?? {};
-            const activeSpan = spans[matched];
-            if (activeSpan && typeof activeSpan.startedAt === "number" && activeSpan.startedAt > 0) {
-              domainStartedAt = activeSpan.startedAt;
+            const activeDomainSpan = data.domainSpans?.[matched];
+            const otherActiveTab = Object.values(data.activeVisits ?? {}).some(
+              (v: any) =>
+                v.domain === matched &&
+                v.instanceId !== tabInstanceId &&
+                v.startedAt >= sStart &&
+                Date.now() - (v.lastHeartbeat || 0) <= 60000
+            );
+
+            if (otherActiveTab && activeDomainSpan?.startedAt && activeDomainSpan.startedAt >= sStart) {
+              domainStartedAt = activeDomainSpan.startedAt;
             } else if (isRapidReload) {
               const storedDom = getStoredDomainStart();
               domainStartedAt = storedDom > 0 && (sStart === 0 || storedDom >= sStart) ? storedDom : visitStartedAt;
@@ -892,18 +955,27 @@ export default defineContentScript({
           : visitStartedAt;
 
         // 1. Center Timer: how long this particular tab has been open on this restricted site
-        let currentVisitSec = effectiveVisitStart > 0
+        const currentVisitSec = effectiveVisitStart > 0
           ? Math.max(0, Math.floor((now - effectiveVisitStart) / 1000))
           : 0;
 
         // 2. Top-Right Corner Timer: accumulated time of THIS WEBSITE in this session
-        const effectiveDomainStart = sessionStartedAt > 0 && domainStartedAt > 0
-          ? Math.max(domainStartedAt, sessionStartedAt)
-          : (domainStartedAt > 0 ? domainStartedAt : effectiveVisitStart);
-        const spanElapsedMs = effectiveDomainStart > 0 ? Math.max(0, now - effectiveDomainStart) : 0;
-        let totalSiteSec = Math.floor((baseSiteUsage + spanElapsedMs) / 1000);
-        if (responseTotalSiteUsageSec >= 0 && responseTotalSiteUsageSec > totalSiteSec) {
-          totalSiteSec = responseTotalSiteUsageSec;
+        const baseUsageSec = baseSiteUsage > 0 ? Math.floor(baseSiteUsage / 1000) : 0;
+
+        const hasEarlierConcurrentTab =
+          domainStartedAt > 0 &&
+          domainStartedAt < effectiveVisitStart &&
+          sessionStartedAt > 0 &&
+          domainStartedAt >= sessionStartedAt;
+
+        const activeSpanSec = hasEarlierConcurrentTab
+          ? Math.max(0, Math.floor((now - domainStartedAt) / 1000))
+          : currentVisitSec;
+
+        let totalSiteSec = baseUsageSec + activeSpanSec;
+        if (sessionStartedAt > 0) {
+          const maxSessionSec = Math.max(0, Math.floor((now - sessionStartedAt) / 1000));
+          totalSiteSec = Math.min(maxSessionSec, totalSiteSec);
         }
 
         if (currentVisitSec !== lastVisitSec) {
@@ -949,12 +1021,12 @@ export default defineContentScript({
 
           persistVisitStart(0);
           persistDomainStart(0);
+          persistBaseUsage(0);
           isRestrictedPage = false;
           visitStartedAt = 0;
           domainStartedAt = 0;
           baseSiteUsage = 0;
           sessionStartedAt = 0;
-          responseTotalSiteUsageSec = -1;
           lastVisitSec = -1;
           lastTotalSec = -1;
           lastSessionSec = -1;
@@ -1031,12 +1103,10 @@ export default defineContentScript({
           persistVisitStart(visitStartedAt);
 
           baseSiteUsage = typeof response.baseSiteUsage === "number" ? response.baseSiteUsage : 0;
+          persistBaseUsage(baseSiteUsage);
           if (typeof response.domainStartedAt === "number" && response.domainStartedAt > 0) {
             domainStartedAt = response.domainStartedAt;
             persistDomainStart(domainStartedAt);
-          }
-          if (typeof response.totalSiteUsageSec === "number") {
-            responseTotalSiteUsageSec = response.totalSiteUsageSec;
           }
 
           if (response.mode === "block") {
@@ -1057,9 +1127,9 @@ export default defineContentScript({
             visitStartedAt = 0;
             persistVisitStart(0);
             persistDomainStart(0);
+            persistBaseUsage(0);
             domainStartedAt = 0;
             baseSiteUsage = 0;
-            responseTotalSiteUsageSec = -1;
             lastVisitSec = -1;
             lastTotalSec = -1;
             distBar.style.display = "none";
@@ -1138,7 +1208,22 @@ export default defineContentScript({
         }
 
         if (changes.startedAt && typeof changes.startedAt.newValue === "number") {
-          sessionStartedAt = changes.startedAt.newValue > 0 ? changes.startedAt.newValue : 0;
+          const newStart = changes.startedAt.newValue > 0 ? changes.startedAt.newValue : 0;
+          if (newStart !== sessionStartedAt) {
+            sessionStartedAt = newStart;
+            // Clean reset when a new focus session starts
+            if (newStart > 0) {
+              baseSiteUsage = 0;
+              persistBaseUsage(0);
+              visitStartedAt = pageLoadTime >= newStart ? pageLoadTime : newStart;
+              persistVisitStart(visitStartedAt);
+              domainStartedAt = visitStartedAt;
+              persistDomainStart(domainStartedAt);
+              lastVisitSec = -1;
+              lastTotalSec = -1;
+              lastSessionSec = -1;
+            }
+          }
         }
 
         // Immediately re-check blocked and restricted state from storage on any session changes
@@ -1149,12 +1234,12 @@ export default defineContentScript({
         if (changes.isActive?.newValue === false) {
           persistVisitStart(0);
           persistDomainStart(0);
+          persistBaseUsage(0);
           isRestrictedPage = false;
           visitStartedAt = 0;
           domainStartedAt = 0;
           baseSiteUsage = 0;
           sessionStartedAt = 0;
-          responseTotalSiteUsageSec = -1;
           lastVisitSec = -1;
           lastTotalSec = -1;
           lastSessionSec = -1;

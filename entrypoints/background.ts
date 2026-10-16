@@ -45,7 +45,7 @@ interface BackgroundData {
 const DEFAULT_BLOCKED_SITES: string[] = [];
 const DEFAULT_RESTRICTED_SITES: string[] = [];
 export const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-export const HEARTBEAT_TIMEOUT_MS = 15000;
+export const HEARTBEAT_TIMEOUT_MS = 60000;
 
 function normalizeHost(host: string): string {
   if (!host) return "";
@@ -101,6 +101,33 @@ function addUsage(
   usage[domain] = (usage[domain] ?? 0) + duration;
 }
 
+function finalizeDomainSpan(
+  domainSpans: Record<string, DomainSpan>,
+  usage: Record<string, number>,
+  domain: string,
+  now: number,
+  fallbackTime?: number,
+  sessionStart?: number,
+): boolean {
+  const span = domainSpans[domain];
+  if (!span) return false;
+  const effectiveHeartbeat = fallbackTime || span.lastHeartbeat || now;
+  // If the last heartbeat was within 5 seconds of 'now', it was an active close at 'now'
+  // Otherwise, the visit ended at the last recorded heartbeat (preventing phantom idle time)
+  const isCleanLeaving = effectiveHeartbeat > 0 && Math.abs(now - effectiveHeartbeat) <= 5000;
+  const endTime = isCleanLeaving ? now : Math.max(span.startedAt, effectiveHeartbeat);
+  const effectiveStart =
+    sessionStart && sessionStart > 0
+      ? Math.max(span.startedAt, sessionStart)
+      : span.startedAt;
+  const duration = Math.max(0, endTime - effectiveStart);
+  if (duration > 0) {
+    usage[domain] = (usage[domain] ?? 0) + duration;
+  }
+  delete domainSpans[domain];
+  return true;
+}
+
 function finalizeVisit(
   activeVisits: Record<string, ActiveVisit>,
   domainSpans: Record<string, DomainSpan>,
@@ -136,22 +163,17 @@ function finalizeVisit(
         const v = activeVisits[k];
         return (
           v !== undefined &&
-          v.domain === domain
+          v.domain === domain &&
+          now - v.lastHeartbeat <= HEARTBEAT_TIMEOUT_MS
         );
       });
 
       const remainingVisitsForDomain = Object.values(activeVisits).some(
-        (v) => v.domain === domain,
+        (v) => v.domain === domain && now - v.lastHeartbeat <= HEARTBEAT_TIMEOUT_MS,
       );
 
       if (span.tabKeys.length === 0 || !remainingVisitsForDomain) {
-        const effectiveHeartbeat = span.lastHeartbeat || lastHeartbeatTime;
-        const endTime = Math.max(span.startedAt, Math.min(now, effectiveHeartbeat || now));
-        const duration = Math.max(0, endTime - span.startedAt);
-        if (duration > 0) {
-          usage[domain] = (usage[domain] ?? 0) + duration;
-        }
-        delete domainSpans[domain];
+        finalizeDomainSpan(domainSpans, usage, domain, now, lastHeartbeatTime);
         changed = true;
       }
     }
@@ -231,15 +253,11 @@ export default defineBackground(() => {
         }
 
         for (const [domain, span] of Object.entries(domainSpans)) {
-          const remainingForDomain = Object.values(activeVisits).filter((v) => v.domain === domain);
+          const remainingForDomain = Object.values(activeVisits).filter(
+            (v) => v.domain === domain && (now - v.lastHeartbeat <= HEARTBEAT_TIMEOUT_MS || (v.tabId !== undefined && openTabIds.has(String(v.tabId)))),
+          );
           if (remainingForDomain.length === 0) {
-            const effectiveHeartbeat = span.lastHeartbeat || now;
-            const endTime = Math.max(span.startedAt, Math.min(now, effectiveHeartbeat));
-            const duration = Math.max(0, endTime - span.startedAt);
-            if (duration > 0) {
-              usage[domain] = (usage[domain] ?? 0) + duration;
-            }
-            delete domainSpans[domain];
+            finalizeDomainSpan(domainSpans, usage, domain, now, span.lastHeartbeat);
             changed = true;
           }
         }
@@ -460,9 +478,9 @@ export default defineBackground(() => {
           }
         } catch {}
 
-        // Prune any abandoned visits with missing tabs or stale headless instance heartbeats
+        // Prune any abandoned visits with missing tabs or stale heartbeats
         for (const [k, v] of Object.entries(activeVisits)) {
-          if (v.tabId === undefined && now - v.lastHeartbeat > 60000) {
+          if (k !== tabKey && now - v.lastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
             finalizeVisit(activeVisits, domainSpans, usage, k, v.lastHeartbeat || now);
             hasStateChange = true;
           }
@@ -471,21 +489,27 @@ export default defineBackground(() => {
         // Clean up any domain spans that have no remaining active visits
         for (const [domain, span] of Object.entries(domainSpans)) {
           const hasActiveVisit = Object.values(activeVisits).some(
-            (v) => v.domain === domain
+            (v) => v.domain === domain && now - v.lastHeartbeat <= HEARTBEAT_TIMEOUT_MS,
           );
           if (!hasActiveVisit) {
-            const effectiveHeartbeat = span.lastHeartbeat || now;
-            const endTime = Math.max(span.startedAt, Math.min(now, effectiveHeartbeat));
-            const duration = Math.max(0, endTime - span.startedAt);
-            if (duration > 0) {
-              usage[domain] = (usage[domain] ?? 0) + duration;
-            }
-            delete domainSpans[domain];
+            finalizeDomainSpan(domainSpans, usage, domain, now, span.lastHeartbeat);
             hasStateChange = true;
           }
         }
 
         const existing = activeVisits[tabKey];
+
+        // Clean up any stale visit anchors from prior sessions
+        if (existing && existing.startedAt < sessionStart) {
+          delete activeVisits[tabKey];
+        }
+
+        if (restrictedDomain) {
+          const staleSpan = domainSpans[restrictedDomain];
+          if (staleSpan && staleSpan.startedAt < sessionStart) {
+            delete domainSpans[restrictedDomain];
+          }
+        }
 
         // Only finalize the visit if the tab navigated away to a different domain or an unrestricted site
         if (existing && existing.domain !== restrictedDomain) {
@@ -498,15 +522,30 @@ export default defineBackground(() => {
             typeof msg.tabVisitStartedAt === "number" && msg.tabVisitStartedAt > 0
               ? msg.tabVisitStartedAt
               : now;
-          const clientStart = Math.max(rawClientStart, sessionStart);
+          const clientStart = Math.min(now, Math.max(rawClientStart, sessionStart));
 
-          // Check if this specific tab was already active on this domain
+          // Check if this specific tab was already active on this domain with the exact same instanceId
           const isTabContinuing =
             existing !== undefined &&
-            existing.domain === restrictedDomain;
+            existing.domain === restrictedDomain &&
+            (!instanceId || !existing.instanceId || existing.instanceId === instanceId) &&
+            now - existing.lastHeartbeat <= HEARTBEAT_TIMEOUT_MS;
+
+          // Check if any other tab is actively on this domain right now
+          const otherActiveTabsForDomain = Object.values(activeVisits).some(
+            (v) =>
+              v.domain === restrictedDomain &&
+              v !== existing &&
+              v.startedAt >= sessionStart &&
+              now - v.lastHeartbeat <= HEARTBEAT_TIMEOUT_MS,
+          );
 
           let currentVisit = existing;
           if (!isTabContinuing || !currentVisit) {
+            // Finalize prior visit on this tab if it belonged to a different instance or domain
+            if (existing) {
+              finalizeVisit(activeVisits, domainSpans, usage, tabKey, existing.lastHeartbeat || now);
+            }
             currentVisit = {
               domain: restrictedDomain,
               hostname: host,
@@ -533,10 +572,17 @@ export default defineBackground(() => {
           }
 
           let span = domainSpans[restrictedDomain];
+          if (span && !isTabContinuing && !otherActiveTabsForDomain) {
+            // Fresh visit on a closed domain where an old span lingered: credit old span and start fresh
+            finalizeDomainSpan(domainSpans, usage, restrictedDomain, now, existing?.lastHeartbeat, sessionStart);
+            span = undefined;
+          }
+
           if (!span) {
-            // Start a fresh domain span starting at this visit start
+            // Start a fresh domain span starting at current visit start
+            const freshStart = isTabContinuing ? currentVisit.startedAt : clientStart;
             span = {
-              startedAt: currentVisit.startedAt,
+              startedAt: freshStart,
               tabKeys: [tabKey],
               lastHeartbeat: now,
             };
@@ -560,6 +606,8 @@ export default defineBackground(() => {
 
           const activeDuration = span ? Math.max(0, now - span.startedAt) : 0;
           const rawTotalDuration = (usage[restrictedDomain] ?? 0) + activeDuration;
+          const maxSessionMs = Math.max(0, now - sessionStart);
+          const totalDurationMs = Math.min(maxSessionMs, rawTotalDuration);
 
           return {
             isActive: true,
@@ -569,9 +617,12 @@ export default defineBackground(() => {
             isRestricted: true,
             domain: restrictedDomain,
             visitStartedAt: currentVisit.startedAt,
-            domainStartedAt: span ? span.startedAt : currentVisit.startedAt,
+            domainStartedAt:
+              otherActiveTabsForDomain && span
+                ? span.startedAt
+                : currentVisit.startedAt,
             baseSiteUsage: usage[restrictedDomain] ?? 0,
-            totalSiteUsageSec: Math.floor(rawTotalDuration / 1000),
+            totalSiteUsageSec: Math.floor(totalDurationMs / 1000),
           };
         }
 
@@ -655,16 +706,10 @@ export default defineBackground(() => {
         // Clean up any domain spans that have no remaining visits
         for (const [domain, span] of Object.entries(domainSpans)) {
           const hasActiveVisit = Object.values(activeVisits).some(
-            (v) => v.domain === domain
+            (v) => v.domain === domain && now - v.lastHeartbeat <= HEARTBEAT_TIMEOUT_MS,
           );
           if (!hasActiveVisit) {
-            const effectiveHeartbeat = span.lastHeartbeat || now;
-            const endTime = Math.max(span.startedAt, Math.min(now, effectiveHeartbeat));
-            const duration = Math.max(0, endTime - span.startedAt);
-            if (duration > 0) {
-              usage[domain] = (usage[domain] ?? 0) + duration;
-            }
-            delete domainSpans[domain];
+            finalizeDomainSpan(domainSpans, usage, domain, now, span.lastHeartbeat);
             changed = true;
           }
         }
@@ -723,9 +768,6 @@ export default defineBackground(() => {
     const candidateUrl = changeInfo.url || tab.url;
     if (!candidateUrl) return;
 
-    const topHost = safeExtractHost(candidateUrl);
-    if (!topHost) return;
-
     runSerial(async () => {
       const data = (await browser.storage.local.get([
         "activeVisits",
@@ -746,8 +788,9 @@ export default defineBackground(() => {
       const visit = activeVisits[visitKey];
       if (!visit) return;
 
+      const topHost = safeExtractHost(candidateUrl);
       const restrictedSites = data.restrictedSites ?? [];
-      const newDomain = findMatchingSite(topHost, restrictedSites);
+      const newDomain = topHost ? findMatchingSite(topHost, restrictedSites) : null;
 
       // If the tab navigated away to another domain or unrestricted site, finalize its visit
       if (newDomain !== visit.domain) {
@@ -815,16 +858,10 @@ export default defineBackground(() => {
         // Clean up any domain spans that have no remaining open tabs on that domain
         for (const [domain, span] of Object.entries(domainSpans)) {
           const hasActiveVisit = Object.values(activeVisits).some(
-            (v) => v.domain === domain
+            (v) => v.domain === domain && now - v.lastHeartbeat <= HEARTBEAT_TIMEOUT_MS,
           );
           if (!hasActiveVisit) {
-            const effectiveHeartbeat = span.lastHeartbeat || now;
-            const endTime = Math.max(span.startedAt, Math.min(now, effectiveHeartbeat));
-            const duration = Math.max(0, endTime - span.startedAt);
-            if (duration > 0) {
-              usage[domain] = (usage[domain] ?? 0) + duration;
-            }
-            delete domainSpans[domain];
+            finalizeDomainSpan(domainSpans, usage, domain, now, span.lastHeartbeat);
             changed = true;
           }
         }
