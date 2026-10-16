@@ -3,6 +3,7 @@ interface Message {
   message: string;
   mode?: string;
   hostname?: string;
+  tabInstanceId?: string;
   tabVisitStartedAt?: number;
 }
 
@@ -10,12 +11,15 @@ interface ActiveVisit {
   domain: string;
   hostname: string;
   startedAt: number;
-  lastHeartbeat?: number;
+  lastHeartbeat: number;
+  tabId?: number;
+  instanceId?: string;
 }
 
 interface DomainSpan {
   startedAt: number;
-  tabIds: string[];
+  tabKeys: string[];
+  lastHeartbeat?: number;
 }
 
 interface SessionRecord {
@@ -38,9 +42,10 @@ interface BackgroundData {
   domainSpans?: Record<string, DomainSpan>;
 }
 
-const DEFAULT_BLOCKED_SITES = ["x.com", "twitter.com"];
-const DEFAULT_RESTRICTED_SITES = ["youtube.com", "instagram.com"];
+const DEFAULT_BLOCKED_SITES: string[] = [];
+const DEFAULT_RESTRICTED_SITES: string[] = [];
 export const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+export const HEARTBEAT_TIMEOUT_MS = 15000;
 
 function normalizeHost(host: string): string {
   if (!host) return "";
@@ -96,22 +101,63 @@ function addUsage(
   usage[domain] = (usage[domain] ?? 0) + duration;
 }
 
-function removeTabFromDomain(
+function finalizeVisit(
+  activeVisits: Record<string, ActiveVisit>,
   domainSpans: Record<string, DomainSpan>,
   usage: Record<string, number>,
-  domain: string,
-  tabKey: string,
+  tabIdentifier: string,
   now: number,
-) {
-  const span = domainSpans[domain];
-  if (!span) return;
-  const remainingTabs = span.tabIds.filter((id) => id !== tabKey);
-  if (remainingTabs.length === 0) {
-    addUsage(usage, domain, Math.max(0, now - span.startedAt));
-    delete domainSpans[domain];
-  } else {
-    span.tabIds = remainingTabs;
+): boolean {
+  if (!tabIdentifier) return false;
+  let changed = false;
+  const domainsToRecheck = new Set<string>();
+  let lastHeartbeatTime = now;
+
+  for (const [key, visit] of Object.entries(activeVisits)) {
+    if (
+      key === tabIdentifier ||
+      visit.instanceId === tabIdentifier ||
+      (visit.tabId !== undefined && String(visit.tabId) === tabIdentifier)
+    ) {
+      domainsToRecheck.add(visit.domain);
+      if (visit.lastHeartbeat && visit.lastHeartbeat > 0) {
+        lastHeartbeatTime = Math.min(now, visit.lastHeartbeat);
+      }
+      delete activeVisits[key];
+      changed = true;
+    }
   }
+
+  for (const domain of domainsToRecheck) {
+    const span = domainSpans[domain];
+    if (span) {
+      span.tabKeys = span.tabKeys.filter((k) => {
+        if (k === tabIdentifier) return false;
+        const v = activeVisits[k];
+        return (
+          v !== undefined &&
+          v.domain === domain
+        );
+      });
+
+      const remainingVisitsForDomain = Object.values(activeVisits).some(
+        (v) => v.domain === domain,
+      );
+
+      if (span.tabKeys.length === 0 || !remainingVisitsForDomain) {
+        const effectiveHeartbeat = span.lastHeartbeat || lastHeartbeatTime;
+        const endTime = Math.max(span.startedAt, Math.min(now, effectiveHeartbeat || now));
+        const duration = Math.max(0, endTime - span.startedAt);
+        if (duration > 0) {
+          usage[domain] = (usage[domain] ?? 0) + duration;
+        }
+        delete domainSpans[domain];
+        changed = true;
+      }
+    }
+  }
+
+  return changed;
 }
 
 let stateQueue: Promise<void> = Promise.resolve();
@@ -145,11 +191,26 @@ export default defineBackground(() => {
 
       const updates: Record<string, any> = {};
 
-      if (!data.blockedSites || data.blockedSites.length === 0) {
-        updates.blockedSites = DEFAULT_BLOCKED_SITES;
+      if (data.blockedSites === undefined) {
+        updates.blockedSites = [];
+      } else if (
+        Array.isArray(data.blockedSites) &&
+        data.blockedSites.length === 2 &&
+        data.blockedSites.includes("x.com") &&
+        data.blockedSites.includes("twitter.com")
+      ) {
+        updates.blockedSites = [];
       }
-      if (!data.restrictedSites || data.restrictedSites.length === 0) {
-        updates.restrictedSites = DEFAULT_RESTRICTED_SITES;
+
+      if (data.restrictedSites === undefined) {
+        updates.restrictedSites = [];
+      } else if (
+        Array.isArray(data.restrictedSites) &&
+        data.restrictedSites.length === 2 &&
+        data.restrictedSites.includes("youtube.com") &&
+        data.restrictedSites.includes("instagram.com")
+      ) {
+        updates.restrictedSites = [];
       }
 
       if (data.activeVisits && Object.keys(data.activeVisits).length > 0) {
@@ -162,9 +223,23 @@ export default defineBackground(() => {
         let changed = false;
 
         for (const [tabKey, visit] of Object.entries(activeVisits)) {
-          if (!openTabIds.has(tabKey)) {
-            delete activeVisits[tabKey];
-            removeTabFromDomain(domainSpans, usage, visit.domain, tabKey, now);
+          const tabIdStr = visit.tabId !== undefined ? String(visit.tabId) : tabKey;
+          if (!openTabIds.has(tabIdStr)) {
+            finalizeVisit(activeVisits, domainSpans, usage, tabKey, visit.lastHeartbeat || now);
+            changed = true;
+          }
+        }
+
+        for (const [domain, span] of Object.entries(domainSpans)) {
+          const remainingForDomain = Object.values(activeVisits).filter((v) => v.domain === domain);
+          if (remainingForDomain.length === 0) {
+            const effectiveHeartbeat = span.lastHeartbeat || now;
+            const endTime = Math.max(span.startedAt, Math.min(now, effectiveHeartbeat));
+            const duration = Math.max(0, endTime - span.startedAt);
+            if (duration > 0) {
+              usage[domain] = (usage[domain] ?? 0) + duration;
+            }
+            delete domainSpans[domain];
             changed = true;
           }
         }
@@ -205,18 +280,23 @@ export default defineBackground(() => {
           return { success: false, error: "A session is already active" };
         }
 
-        await browser.storage.local.set({
-          blockedSites: stored.blockedSites ?? DEFAULT_BLOCKED_SITES,
-          restrictedSites: stored.restrictedSites ?? DEFAULT_RESTRICTED_SITES,
+        const sessionUpdates: Record<string, any> = {
           isActive: true,
           mode: msg.mode,
           startedAt: now,
           activeVisits: {},
           sessionSiteUsage: {},
           domainSpans: {},
-        });
+        };
+        if (stored.blockedSites === undefined) {
+          sessionUpdates.blockedSites = DEFAULT_BLOCKED_SITES;
+        }
+        if (stored.restrictedSites === undefined) {
+          sessionUpdates.restrictedSites = DEFAULT_RESTRICTED_SITES;
+        }
+        await browser.storage.local.set(sessionUpdates);
 
-        return { success: true };
+        return { success: true, startedAt: now };
       }
 
       // 2. STOP SESSION
@@ -258,6 +338,7 @@ export default defineBackground(() => {
 
         await browser.storage.local.set({
           isActive: false,
+          startedAt: 0,
           mode: "",
           sessions,
           activeVisits: {},
@@ -278,6 +359,7 @@ export default defineBackground(() => {
 
         return {
           isActive: Boolean(data.isActive),
+          startedAt: data.isActive && data.startedAt ? data.startedAt : 0,
           elapsedTime:
             data.isActive && data.startedAt ? Math.max(0, now - data.startedAt) : 0,
           mode: data.mode ?? "",
@@ -323,8 +405,8 @@ export default defineBackground(() => {
           await browser.storage.local.set({ startedAt: sessionStart });
         }
 
-        const blockedSites = data.blockedSites ?? DEFAULT_BLOCKED_SITES;
-        const restrictedSites = data.restrictedSites ?? DEFAULT_RESTRICTED_SITES;
+        const blockedSites = data.blockedSites ?? [];
+        const restrictedSites = data.restrictedSites ?? [];
 
         const blockedDomain =
           data.mode === "block" ? findMatchingSite(host, blockedSites) : null;
@@ -347,87 +429,150 @@ export default defineBackground(() => {
         const activeVisits = { ...(data.activeVisits ?? {}) };
         const usage = { ...(data.sessionSiteUsage ?? {}) };
         const domainSpans = { ...(data.domainSpans ?? {}) };
-        // Resilient tabKey: tabId if available, or domain-keyed fallback
-        const tabKey = tabId !== undefined ? String(tabId) : (host ? `tab_${host}` : "main_tab");
+        const rawTabId = sender.tab?.id;
+        const instanceId = msg.tabInstanceId || "";
+        const tabKey =
+          rawTabId !== undefined
+            ? String(rawTabId)
+            : (instanceId || (host ? `tab_${host}` : "main_tab"));
         let hasStateChange = false;
 
-        if (tabKey !== undefined) {
-          const existing = activeVisits[tabKey];
+        // Deduplicate: clean up any other active visit entry sharing the exact same instanceId
+        if (instanceId) {
+          for (const [k, v] of Object.entries(activeVisits)) {
+            if (k !== tabKey && v.instanceId === instanceId) {
+              delete activeVisits[k];
+              hasStateChange = true;
+            }
+          }
+        }
 
-          // If this tab was visiting another domain, finalize its membership in that domain
-          if (existing && existing.domain !== restrictedDomain) {
-            removeTabFromDomain(domainSpans, usage, existing.domain, tabKey, now);
-            delete activeVisits[tabKey];
+        // Reconcile with currently open browser tabs: if tab is closed, finalize immediately
+        try {
+          const openTabs = await browser.tabs.query({});
+          const openTabIds = new Set(openTabs.map((t) => String(t.id)));
+          for (const [k, v] of Object.entries(activeVisits)) {
+            const vTabId = v.tabId !== undefined ? String(v.tabId) : k;
+            if (k !== tabKey && v.tabId !== undefined && !openTabIds.has(vTabId)) {
+              finalizeVisit(activeVisits, domainSpans, usage, k, v.lastHeartbeat || now);
+              hasStateChange = true;
+            }
+          }
+        } catch {}
+
+        // Prune any abandoned visits with missing tabs or stale headless instance heartbeats
+        for (const [k, v] of Object.entries(activeVisits)) {
+          if (v.tabId === undefined && now - v.lastHeartbeat > 60000) {
+            finalizeVisit(activeVisits, domainSpans, usage, k, v.lastHeartbeat || now);
             hasStateChange = true;
           }
+        }
 
-          if (restrictedDomain) {
-            const clientStart =
-              typeof msg.tabVisitStartedAt === "number" && msg.tabVisitStartedAt > 0
-                ? msg.tabVisitStartedAt
-                : now;
-
-            // Start or refresh visit for this tab
-            if (!activeVisits[tabKey]) {
-              activeVisits[tabKey] = {
-                domain: restrictedDomain,
-                hostname: host,
-                startedAt: clientStart,
-                lastHeartbeat: now,
-              };
-              hasStateChange = true;
-            } else {
-              activeVisits[tabKey].lastHeartbeat = now;
-              // Never advance startedAt forward! Only preserve or align to earlier start
-              if (clientStart < activeVisits[tabKey].startedAt) {
-                activeVisits[tabKey].startedAt = clientStart;
-                hasStateChange = true;
-              }
+        // Clean up any domain spans that have no remaining active visits
+        for (const [domain, span] of Object.entries(domainSpans)) {
+          const hasActiveVisit = Object.values(activeVisits).some(
+            (v) => v.domain === domain
+          );
+          if (!hasActiveVisit) {
+            const effectiveHeartbeat = span.lastHeartbeat || now;
+            const endTime = Math.max(span.startedAt, Math.min(now, effectiveHeartbeat));
+            const duration = Math.max(0, endTime - span.startedAt);
+            if (duration > 0) {
+              usage[domain] = (usage[domain] ?? 0) + duration;
             }
-
-            // Clean up any stale visits from dead tabs (no heartbeat in > 15s)
-            for (const [vTabId, visit] of Object.entries(activeVisits)) {
-              if (vTabId !== tabKey && now - (visit.lastHeartbeat ?? visit.startedAt) > 15000) {
-                removeTabFromDomain(domainSpans, usage, visit.domain, vTabId, now);
-                delete activeVisits[vTabId];
-                hasStateChange = true;
-              }
-            }
-
-            // Ensure domain active span is started or tab is included
-            let span = domainSpans[restrictedDomain];
-            if (!span || span.tabIds.length === 0) {
-              span = {
-                startedAt: activeVisits[tabKey].startedAt,
-                tabIds: [tabKey],
-              };
-              domainSpans[restrictedDomain] = span;
-              hasStateChange = true;
-            } else if (!span.tabIds.includes(tabKey)) {
-              span.tabIds.push(tabKey);
-              hasStateChange = true;
-            }
-
-            if (hasStateChange) {
-              await browser.storage.local.set({
-                activeVisits,
-                sessionSiteUsage: usage,
-                domainSpans,
-              });
-            }
-
-            return {
-              isActive: true,
-              mode: data.mode ?? "",
-              sessionStartedAt: sessionStart,
-              isBlocked: false,
-              isRestricted: true,
-              domain: restrictedDomain,
-              visitStartedAt: activeVisits[tabKey].startedAt,
-              domainStartedAt: span.startedAt,
-              baseSiteUsage: usage[restrictedDomain] ?? 0,
-            };
+            delete domainSpans[domain];
+            hasStateChange = true;
           }
+        }
+
+        const existing = activeVisits[tabKey];
+
+        // Only finalize the visit if the tab navigated away to a different domain or an unrestricted site
+        if (existing && existing.domain !== restrictedDomain) {
+          const changed = finalizeVisit(activeVisits, domainSpans, usage, tabKey, now);
+          if (changed) hasStateChange = true;
+        }
+
+        if (restrictedDomain) {
+          const rawClientStart =
+            typeof msg.tabVisitStartedAt === "number" && msg.tabVisitStartedAt > 0
+              ? msg.tabVisitStartedAt
+              : now;
+          const clientStart = Math.max(rawClientStart, sessionStart);
+
+          // Check if this specific tab was already active on this domain
+          const isTabContinuing =
+            existing !== undefined &&
+            existing.domain === restrictedDomain;
+
+          let currentVisit = existing;
+          if (!isTabContinuing || !currentVisit) {
+            currentVisit = {
+              domain: restrictedDomain,
+              hostname: host,
+              tabId: rawTabId,
+              instanceId,
+              startedAt: clientStart,
+              lastHeartbeat: now,
+            };
+            activeVisits[tabKey] = currentVisit;
+            hasStateChange = true;
+          } else {
+            // Tab is continuing on the same restricted domain (e.g. reload or heartbeat)
+            currentVisit.lastHeartbeat = now;
+            currentVisit.instanceId = instanceId;
+            if (rawTabId !== undefined && currentVisit.tabId === undefined) {
+              currentVisit.tabId = rawTabId;
+              hasStateChange = true;
+            }
+            // If the client possesses a valid earlier visit start (anchored in sessionStorage across rapid reload), respect it
+            if (rawClientStart > 0 && rawClientStart < currentVisit.startedAt) {
+              currentVisit.startedAt = Math.max(rawClientStart, sessionStart);
+              hasStateChange = true;
+            }
+          }
+
+          let span = domainSpans[restrictedDomain];
+          if (!span) {
+            // Start a fresh domain span starting at this visit start
+            span = {
+              startedAt: currentVisit.startedAt,
+              tabKeys: [tabKey],
+              lastHeartbeat: now,
+            };
+            domainSpans[restrictedDomain] = span;
+            hasStateChange = true;
+          } else {
+            // Span already active on this domain with other tabs or continuing visit
+            span.lastHeartbeat = now;
+            if (!span.tabKeys.includes(tabKey)) {
+              span.tabKeys.push(tabKey);
+              hasStateChange = true;
+            }
+          }
+
+          // Always persist state on check_site for restricted sites so heartbeats and visit tracking are never lost
+          await browser.storage.local.set({
+            activeVisits,
+            sessionSiteUsage: usage,
+            domainSpans,
+          });
+
+          const activeDuration = span ? Math.max(0, now - span.startedAt) : 0;
+          const rawTotalDuration = (usage[restrictedDomain] ?? 0) + activeDuration;
+
+          return {
+            isActive: true,
+            mode: data.mode ?? "",
+            sessionStartedAt: sessionStart,
+            isBlocked: false,
+            isRestricted: true,
+            domain: restrictedDomain,
+            visitStartedAt: currentVisit.startedAt,
+            domainStartedAt: span ? span.startedAt : currentVisit.startedAt,
+            baseSiteUsage: usage[restrictedDomain] ?? 0,
+            totalSiteUsageSec: Math.floor(rawTotalDuration / 1000),
+          };
         }
 
         if (hasStateChange) {
@@ -450,6 +595,91 @@ export default defineBackground(() => {
         };
       }
 
+      // 5. TAB LEAVING / UNLOAD
+      if (msg.message === "tab_leaving") {
+        const rawTabId = sender.tab?.id;
+        const instanceId = msg.tabInstanceId || "";
+        const tabIdentifier =
+          rawTabId !== undefined
+            ? String(rawTabId)
+            : instanceId;
+
+        const data = (await browser.storage.local.get([
+          "activeVisits",
+          "sessionSiteUsage",
+          "domainSpans",
+          "isActive",
+        ])) as BackgroundData;
+
+        if (!data.isActive) return { success: true };
+
+        const activeVisits = { ...(data.activeVisits ?? {}) };
+        const usage = { ...(data.sessionSiteUsage ?? {}) };
+        const domainSpans = { ...(data.domainSpans ?? {}) };
+
+        // Check if tab is already closed in browser
+        let isTabStillOpen = false;
+        if (rawTabId !== undefined) {
+          try {
+            const tab = await browser.tabs.get(rawTabId);
+            isTabStillOpen = Boolean(tab);
+          } catch {
+            isTabStillOpen = false;
+          }
+        }
+
+        let changed = false;
+        if (!isTabStillOpen) {
+          // Tab is closed, finalize immediately
+          if (tabIdentifier) {
+            const c1 = finalizeVisit(activeVisits, domainSpans, usage, tabIdentifier, now);
+            if (c1) changed = true;
+          }
+          if (instanceId && instanceId !== tabIdentifier) {
+            const c2 = finalizeVisit(activeVisits, domainSpans, usage, instanceId, now);
+            if (c2) changed = true;
+          }
+        } else {
+          // Tab is still open (reloading or navigating) - update heartbeat so reload can continue seamlessly
+          for (const [key, visit] of Object.entries(activeVisits)) {
+            if (
+              key === tabIdentifier ||
+              visit.instanceId === tabIdentifier ||
+              (visit.tabId !== undefined && String(visit.tabId) === tabIdentifier)
+            ) {
+              visit.lastHeartbeat = now;
+            }
+          }
+        }
+
+        // Clean up any domain spans that have no remaining visits
+        for (const [domain, span] of Object.entries(domainSpans)) {
+          const hasActiveVisit = Object.values(activeVisits).some(
+            (v) => v.domain === domain
+          );
+          if (!hasActiveVisit) {
+            const effectiveHeartbeat = span.lastHeartbeat || now;
+            const endTime = Math.max(span.startedAt, Math.min(now, effectiveHeartbeat));
+            const duration = Math.max(0, endTime - span.startedAt);
+            if (duration > 0) {
+              usage[domain] = (usage[domain] ?? 0) + duration;
+            }
+            delete domainSpans[domain];
+            changed = true;
+          }
+        }
+
+        if (changed) {
+          await browser.storage.local.set({
+            activeVisits,
+            sessionSiteUsage: usage,
+            domainSpans,
+          });
+        }
+
+        return { success: true };
+      }
+
       // 5. GET SITE USAGE (BACKWARD COMPATIBILITY)
       if (msg.message === "get_site_usage") {
         const host = normalizeHost(msg.hostname ?? "");
@@ -459,7 +689,7 @@ export default defineBackground(() => {
           "domainSpans",
         ])) as BackgroundData;
 
-        const restrictedSites = data.restrictedSites ?? DEFAULT_RESTRICTED_SITES;
+        const restrictedSites = data.restrictedSites ?? [];
         const matchedDomain = findMatchingSite(host, restrictedSites) ?? host;
         const usage = data.sessionSiteUsage ?? {};
         const domainSpans = data.domainSpans ?? {};
@@ -490,10 +720,10 @@ export default defineBackground(() => {
 
   // FINALIZE A VISIT WHEN A TAB NAVIGATES AWAY
   browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    // Only check navigation when the tab's URL actually changed
-    if (!changeInfo.url) return;
+    const candidateUrl = changeInfo.url || tab.url;
+    if (!candidateUrl) return;
 
-    const topHost = safeExtractHost(changeInfo.url);
+    const topHost = safeExtractHost(candidateUrl);
     if (!topHost) return;
 
     runSerial(async () => {
@@ -509,26 +739,36 @@ export default defineBackground(() => {
 
       const tabKey = String(tabId);
       const activeVisits = { ...(data.activeVisits ?? {}) };
-      const visit = activeVisits[tabKey];
+      const visitKey = Object.keys(activeVisits).find(
+        (k) => k === tabKey || activeVisits[k]?.tabId === tabId
+      );
+      if (!visitKey) return;
+      const visit = activeVisits[visitKey];
       if (!visit) return;
 
-      const restrictedSites = data.restrictedSites ?? DEFAULT_RESTRICTED_SITES;
-      const visitDomain = visit.domain;
+      const restrictedSites = data.restrictedSites ?? [];
       const newDomain = findMatchingSite(topHost, restrictedSites);
 
       // If the tab navigated away to another domain or unrestricted site, finalize its visit
-      if (newDomain !== visitDomain) {
-        delete activeVisits[tabKey];
+      if (newDomain !== visit.domain) {
         const usage = { ...(data.sessionSiteUsage ?? {}) };
         const domainSpans = { ...(data.domainSpans ?? {}) };
 
-        removeTabFromDomain(domainSpans, usage, visitDomain, tabKey, Date.now());
-
-        await browser.storage.local.set({
+        const changed = finalizeVisit(
           activeVisits,
-          sessionSiteUsage: usage,
           domainSpans,
-        });
+          usage,
+          visitKey,
+          Date.now(),
+        );
+
+        if (changed) {
+          await browser.storage.local.set({
+            activeVisits,
+            sessionSiteUsage: usage,
+            domainSpans,
+          });
+        }
       }
     });
   });
@@ -543,24 +783,62 @@ export default defineBackground(() => {
         "isActive",
       ])) as BackgroundData;
 
+      if (!data.isActive) return;
+
       const tabKey = String(tabId);
       const activeVisits = { ...(data.activeVisits ?? {}) };
-      const visit = activeVisits[tabKey];
-      if (!visit) return;
-
-      delete activeVisits[tabKey];
       const usage = { ...(data.sessionSiteUsage ?? {}) };
       const domainSpans = { ...(data.domainSpans ?? {}) };
+      const now = Date.now();
 
-      if (data.isActive && visit.domain) {
-        removeTabFromDomain(domainSpans, usage, visit.domain, tabKey, Date.now());
+      let changed = finalizeVisit(
+        activeVisits,
+        domainSpans,
+        usage,
+        tabKey,
+        now,
+      );
+
+      // Reconcile with currently open browser tabs to guarantee no orphaned visits or spans
+      try {
+        const openTabs = await browser.tabs.query({});
+        const openTabIds = new Set(openTabs.map((t) => String(t.id)));
+
+        for (const [key, visit] of Object.entries(activeVisits)) {
+          const vTabId = visit.tabId !== undefined ? String(visit.tabId) : key;
+          if (!openTabIds.has(vTabId)) {
+            const closed = finalizeVisit(activeVisits, domainSpans, usage, key, now);
+            if (closed) changed = true;
+          }
+        }
+
+        // Clean up any domain spans that have no remaining open tabs on that domain
+        for (const [domain, span] of Object.entries(domainSpans)) {
+          const hasActiveVisit = Object.values(activeVisits).some(
+            (v) => v.domain === domain
+          );
+          if (!hasActiveVisit) {
+            const effectiveHeartbeat = span.lastHeartbeat || now;
+            const endTime = Math.max(span.startedAt, Math.min(now, effectiveHeartbeat));
+            const duration = Math.max(0, endTime - span.startedAt);
+            if (duration > 0) {
+              usage[domain] = (usage[domain] ?? 0) + duration;
+            }
+            delete domainSpans[domain];
+            changed = true;
+          }
+        }
+      } catch (err) {
+        console.warn("Reconcile error in onRemoved:", err);
       }
 
-      await browser.storage.local.set({
-        activeVisits,
-        sessionSiteUsage: usage,
-        domainSpans,
-      });
+      if (changed) {
+        await browser.storage.local.set({
+          activeVisits,
+          sessionSiteUsage: usage,
+          domainSpans,
+        });
+      }
     }),
   );
 });

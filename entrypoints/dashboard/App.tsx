@@ -138,8 +138,8 @@ export default function App() {
     mode: "block",
     startedAt: 0,
     sessionSiteUsage: {},
-    blockedSites: ["x.com", "twitter.com"],
-    restrictedSites: ["youtube.com", "instagram.com"],
+    blockedSites: [],
+    restrictedSites: [],
   });
 
   const [filterMode, setFilterMode] = useState<"all" | "block" | "restrict">("all");
@@ -198,8 +198,16 @@ export default function App() {
         await browser.storage.local.set({ sessions: validSessions });
       }
 
+      const isActive = Boolean(stored.isActive);
+      const startedAt =
+        isActive && typeof stored.startedAt === "number" && stored.startedAt > 0
+          ? stored.startedAt
+          : 0;
+
       setData({
         ...stored,
+        isActive,
+        startedAt,
         sessions: validSessions,
       });
 
@@ -1420,18 +1428,24 @@ export default function App() {
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {(data.blockedSites ?? ["twitter.com"]).map((site) => (
-                    <span
-                      key={site}
-                      className={`text-xs px-2.5 py-1 rounded-lg border font-mono ${
-                        isDark
-                          ? "bg-neutral-800 text-neutral-300 border-neutral-700"
-                          : "bg-neutral-100 text-neutral-800 border-neutral-200"
-                      }`}
-                    >
-                      {site}
+                  {(data.blockedSites ?? []).length === 0 ? (
+                    <span className={`text-xs italic ${isDark ? "text-neutral-500" : "text-neutral-400"}`}>
+                      No blocked sites added
                     </span>
-                  ))}
+                  ) : (
+                    (data.blockedSites ?? []).map((site) => (
+                      <span
+                        key={site}
+                        className={`text-xs px-2.5 py-1 rounded-lg border font-mono ${
+                          isDark
+                            ? "bg-neutral-800 text-neutral-300 border-neutral-700"
+                            : "bg-neutral-100 text-neutral-800 border-neutral-200"
+                        }`}
+                      >
+                        {site}
+                      </span>
+                    ))
+                  )}
                 </div>
               </div>
 
@@ -1447,18 +1461,24 @@ export default function App() {
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {(data.restrictedSites ?? ["youtube.com", "instagram.com"]).map((site) => (
-                    <span
-                      key={site}
-                      className={`text-xs px-2.5 py-1 rounded-lg border font-mono ${
-                        isDark
-                          ? "bg-neutral-800 text-neutral-300 border-neutral-700"
-                          : "bg-neutral-100 text-neutral-800 border-neutral-200"
-                      }`}
-                    >
-                      {site}
+                  {(data.restrictedSites ?? []).length === 0 ? (
+                    <span className={`text-xs italic ${isDark ? "text-neutral-500" : "text-neutral-400"}`}>
+                      No restricted sites added
                     </span>
-                  ))}
+                  ) : (
+                    (data.restrictedSites ?? []).map((site) => (
+                      <span
+                        key={site}
+                        className={`text-xs px-2.5 py-1 rounded-lg border font-mono ${
+                          isDark
+                            ? "bg-neutral-800 text-neutral-300 border-neutral-700"
+                            : "bg-neutral-100 text-neutral-800 border-neutral-200"
+                        }`}
+                      >
+                        {site}
+                      </span>
+                    ))
+                  )}
                 </div>
               </div>
             </div>
