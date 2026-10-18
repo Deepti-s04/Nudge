@@ -507,7 +507,10 @@ export default function App() {
     for (const domain of currentSessionDomains) {
       const completedUsage = data.sessionSiteUsage?.[domain] ?? 0;
       const activeSpan = data.domainSpans?.[domain];
-      const activeDuration = activeSpan ? Math.max(0, now - activeSpan.startedAt) : 0;
+      const spanStart = activeSpan
+        ? Math.max(activeSpan.startedAt, data.startedAt && data.startedAt > 0 ? data.startedAt : 0)
+        : 0;
+      const activeDuration = spanStart > 0 ? Math.max(0, now - spanStart) : 0;
       const liveDuration = completedUsage + activeDuration;
 
       if (liveDuration > 0) {
@@ -576,8 +579,12 @@ export default function App() {
         );
       }
       if (data.domainSpans) {
+        const sStart = data.startedAt && data.startedAt > 0 ? data.startedAt : 0;
         dayDistractionMs += Object.values(data.domainSpans).reduce(
-          (acc, span) => acc + Math.max(0, now - span.startedAt),
+          (acc, span) => {
+            const spanStart = sStart > 0 ? Math.max(span.startedAt, sStart) : span.startedAt;
+            return acc + Math.max(0, now - spanStart);
+          },
           0,
         );
       }

@@ -12,7 +12,7 @@ export default defineContentScript({
       const s = Math.max(0, totalSec);
       const seconds = s % 60;
       const minutes = Math.floor(s / 60) % 60;
-      const hours = Math.floor(totalSec / 3600);
+      const hours = Math.floor(s / 3600);
 
       return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
         2,
@@ -301,12 +301,42 @@ export default defineContentScript({
     // 3. STATE VARIABLES (Anchored to backend start timestamps)
     const pageLoadTime = Date.now();
 
-    // Per-tab persistent visit and instance anchor (survives page refresh seamlessly)
+    // Detect if this page load is a reload (F5 / Ctrl+R / location.reload())
+    const navEntries =
+      typeof performance !== "undefined" && typeof performance.getEntriesByType === "function"
+        ? (performance.getEntriesByType("navigation") as PerformanceNavigationTiming[])
+        : [];
+    const isPageReload = navEntries[0]?.type === "reload";
+
+    // Storage keys for per-tab session state
     const visitStorageKey = `nudge_tab_visit_start_${hostname}`;
     const instanceStorageKey = `nudge_tab_instance_${hostname}`;
-    const domainStartStorageKey = `nudge_tab_domain_start_${hostname}`;
+    const domainSpanStorageKey = `nudge_tab_domain_span_start_${hostname}`;
     const baseUsageStorageKey = `nudge_tab_base_usage_${hostname}`;
     const lastTickStorageKey = `nudge_tab_last_tick_${hostname}`;
+    const tabIdStorageKey = `nudge_tab_id_${hostname}`;
+    const tabActiveStorageKey = `nudge_tab_active_ms_${hostname}`;
+
+    const getStoredTabActiveMs = (): number => {
+      try {
+        const val = sessionStorage.getItem(tabActiveStorageKey);
+        if (val) {
+          const num = parseInt(val, 10);
+          if (!isNaN(num) && num >= 0) return num;
+        }
+      } catch {}
+      return 0;
+    };
+
+    const persistTabActiveMs = (ms: number) => {
+      try {
+        if (ms >= 0) {
+          sessionStorage.setItem(tabActiveStorageKey, String(ms));
+        } else {
+          sessionStorage.removeItem(tabActiveStorageKey);
+        }
+      } catch {}
+    };
 
     const getLastTick = (): number => {
       try {
@@ -346,9 +376,9 @@ export default defineContentScript({
       } catch {}
     };
 
-    const getStoredDomainStart = (): number => {
+    const getStoredDomainSpanStart = (): number => {
       try {
-        const val = sessionStorage.getItem(domainStartStorageKey);
+        const val = sessionStorage.getItem(domainSpanStorageKey);
         if (val) {
           const num = parseInt(val, 10);
           if (!isNaN(num) && num > 0) return num;
@@ -357,12 +387,12 @@ export default defineContentScript({
       return 0;
     };
 
-    const persistDomainStart = (start: number) => {
+    const persistDomainSpanStart = (start: number) => {
       try {
         if (start > 0) {
-          sessionStorage.setItem(domainStartStorageKey, String(start));
+          sessionStorage.setItem(domainSpanStorageKey, String(start));
         } else {
-          sessionStorage.removeItem(domainStartStorageKey);
+          sessionStorage.removeItem(domainSpanStorageKey);
         }
       } catch {}
     };
@@ -388,42 +418,66 @@ export default defineContentScript({
       } catch {}
     };
 
+    const generateUniqueInstanceId = (): string => {
+      return "tab_" + Date.now() + "_" + Math.random().toString(36).slice(2, 9);
+    };
+
     const getStoredTabInstanceId = (): string => {
       try {
         const val = sessionStorage.getItem(instanceStorageKey);
         if (val) return val;
-        const newId = "tab_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
-        sessionStorage.setItem(instanceStorageKey, newId);
-        return newId;
-      } catch {
-        return "tab_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
-      }
+      } catch {}
+      return "";
     };
 
-    // A visit is ONLY continuous across a fast page reload (F5) if the previous tick occurred within 3.5 seconds
-    const previousTick = getLastTick();
-    const isRapidReload = previousTick > 0 && pageLoadTime - previousTick < 3500;
+    // If reloading an existing tab OR navigating within the same domain on the same tab,
+    // preserve its visit anchor from sessionStorage.
+    // If opening a new tab or duplicated tab, start fresh so it does NOT inherit a sibling's visit.
+    let tabInstanceId = "";
+    let visitStartedAt = 0;
+    let domainSpanStartedAt = 0;
+    let baseSiteUsageMs = 0;
+    // Canonical domain-total snapshot from background (seconds) + when it was taken
+    let usageSnapshotSec = 0;
+    let usageSnapshotAt = 0;
 
-    const tabInstanceId = getStoredTabInstanceId();
+    const storedVisit = getStoredVisitStart();
+    const storedInstance = getStoredTabInstanceId();
+    // Only actual page reloads preserve stored visit start from sessionStorage.
+    // Duplicated tabs (where isPageReload is false) must start fresh and not inherit timers.
+    const isContinuingVisit = isPageReload && storedVisit > 0;
+
+    if (isContinuingVisit) {
+      tabInstanceId = storedInstance || generateUniqueInstanceId();
+      visitStartedAt = storedVisit > 0 ? storedVisit : pageLoadTime;
+      // Never invent a shared domain start from the per-tab visit start
+      domainSpanStartedAt = getStoredDomainSpanStart();
+      baseSiteUsageMs = getStoredBaseUsage();
+      // Wait for storage/sync snapshot so we do not under/over-count the live span
+      usageSnapshotSec = 0;
+      usageSnapshotAt = 0;
+    } else {
+      // New navigation or duplicated tab: generate a fresh unique ID
+      tabInstanceId = generateUniqueInstanceId();
+      visitStartedAt = pageLoadTime;
+      domainSpanStartedAt = 0;
+      baseSiteUsageMs = 0;
+      usageSnapshotSec = 0;
+      usageSnapshotAt = 0;
+      persistVisitStart(visitStartedAt);
+      persistDomainSpanStart(0);
+      persistBaseUsage(0);
+      persistTabActiveMs(0);
+    }
+    try {
+      sessionStorage.setItem(instanceStorageKey, tabInstanceId);
+    } catch {}
+
+    let sessionStartedAt = 0;     // Anchored timestamp when the focus session started
     let isRestrictedPage = false;
     let pageBlocked = false;
-
-    // Fresh navigations or tabs opened after closing start a completely clean visit anchor
-    if (!isRapidReload) {
-      persistVisitStart(0);
-      persistDomainStart(0);
-      persistBaseUsage(0);
-    }
-
-    const initialStoredVisit = isRapidReload ? getStoredVisitStart() : 0;
-    let visitStartedAt = initialStoredVisit > 0 ? initialStoredVisit : pageLoadTime;
-    persistVisitStart(visitStartedAt);
-    const initialStoredDomain = isRapidReload ? getStoredDomainStart() : 0;
-    let domainStartedAt = initialStoredDomain > 0 ? initialStoredDomain : visitStartedAt;
-    persistDomainStart(domainStartedAt);
-    let baseSiteUsage = isRapidReload ? getStoredBaseUsage() : 0; // Total duration (ms) from completed visits to this domain
-    let sessionStartedAt = 0;     // Anchored timestamp when the focus session started
     let isSyncing = false;
+    let latestSyncSeq = 0;
 
     // Per-tab persistent blocked state anchor (survives page refresh with 0ms flicker)
     const blockStorageKey = `nudge_tab_blocked_${hostname}`;
@@ -551,6 +605,19 @@ export default defineContentScript({
       // 1. Immediately abort pending network loads, scripts, and media on this blocked site
       try {
         window.stop();
+      } catch {}
+
+      // Issue 3 Fix: Mute, pause, and detach all pre-buffered media elements to prevent audio leak in background
+      try {
+        document.querySelectorAll("video, audio").forEach((media) => {
+          try {
+            const m = media as HTMLMediaElement;
+            m.pause();
+            m.muted = true;
+            m.removeAttribute("src");
+            m.load();
+          } catch {}
+        });
       } catch {}
 
       // 2. Hide distraction bar and widget if present
@@ -862,7 +929,7 @@ export default defineContentScript({
           activeVisits?: Record<string, any>;
         };
 
-        if (data.isActive && (data.mode === "restrict" || data.mode === "block")) {
+        if (data.isActive && data.mode === "restrict") {
           const sites: string[] = Array.isArray(data.restrictedSites) ? data.restrictedSites : [];
 
           if (isHostBlocked(hostname, sites)) {
@@ -870,63 +937,71 @@ export default defineContentScript({
             sessionStartedAt = sStart;
             isRestrictedPage = true;
 
-            const storedStart = isRapidReload ? getStoredVisitStart() : 0;
-            if (storedStart > 0 && (sStart === 0 || storedStart >= sStart)) {
-              visitStartedAt = storedStart;
+            const matched = getMatchingSite(hostname, sites) || hostname;
+
+            // Usage ms from prior completed spans
+            const usage = data.sessionSiteUsage ?? {};
+            if (typeof usage[matched] === "number") {
+              baseSiteUsageMs = usage[matched];
+              persistBaseUsage(baseSiteUsageMs);
+            }
+
+            // Active shared domain span only — never substitute per-tab visit start
+            const activeDomainSpan = data.domainSpans?.[matched];
+            if (activeDomainSpan?.startedAt && (sStart === 0 || activeDomainSpan.startedAt >= sStart)) {
+              domainSpanStartedAt = activeDomainSpan.startedAt;
+            } else {
+              domainSpanStartedAt = 0;
+            }
+            persistDomainSpanStart(domainSpanStartedAt);
+
+            const checkNow = Date.now();
+            const liveSpanStart = domainSpanStartedAt > 0 ? domainSpanStartedAt : visitStartedAt;
+            const effectiveSpanStart =
+              liveSpanStart > 0 && sStart > 0 ? Math.max(liveSpanStart, sStart) : liveSpanStart;
+            const liveAnchor =
+              domainSpanStartedAt === 0 && baseSiteUsageMs > 0
+                ? Math.max(effectiveSpanStart, pageLoadTime)
+                : effectiveSpanStart;
+            const liveMs = liveAnchor > 0 ? Math.max(0, checkNow - liveAnchor) : 0;
+            const totalDurationMs = baseSiteUsageMs + liveMs;
+            usageSnapshotSec = Math.floor(totalDurationMs / 1000);
+            usageSnapshotAt = checkNow - (totalDurationMs % 1000);
+
+            // Tab visit start (per-tab lifetime)
+            if (isContinuingVisit) {
+              const storedStart = getStoredVisitStart();
+              if (storedStart > 0 && (sStart === 0 || storedStart >= sStart)) {
+                visitStartedAt = storedStart;
+              }
             } else if (!visitStartedAt || visitStartedAt === 0) {
               visitStartedAt = pageLoadTime;
               persistVisitStart(visitStartedAt);
             }
 
-            const matched = getMatchingSite(hostname, sites) || hostname;
-
-            const usage = data.sessionSiteUsage ?? {};
-            if (typeof usage[matched] === "number") {
-              baseSiteUsage = usage[matched];
-              persistBaseUsage(baseSiteUsage);
-            } else {
-              baseSiteUsage = 0;
-              persistBaseUsage(0);
-            }
-
-            const activeDomainSpan = data.domainSpans?.[matched];
-            const otherActiveTab = Object.values(data.activeVisits ?? {}).some(
-              (v: any) =>
-                v.domain === matched &&
-                v.instanceId !== tabInstanceId &&
-                v.startedAt >= sStart &&
-                Date.now() - (v.lastHeartbeat || 0) <= 60000
-            );
-
-            if (otherActiveTab && activeDomainSpan?.startedAt && activeDomainSpan.startedAt >= sStart) {
-              domainStartedAt = activeDomainSpan.startedAt;
-            } else if (isRapidReload) {
-              const storedDom = getStoredDomainStart();
-              domainStartedAt = storedDom > 0 && (sStart === 0 || storedDom >= sStart) ? storedDom : visitStartedAt;
-            } else {
-              domainStartedAt = visitStartedAt;
-            }
-            persistDomainStart(domainStartedAt);
-
-            if (data.mode === "block") {
-              warning.textContent = "Focus Sprint Active (Block Mode)";
-              distBar.style.backgroundColor = "#e11d48";
-            } else {
-              warning.textContent = "You've been distracted";
-              distBar.style.backgroundColor = "#be123c";
-            }
+            warning.textContent = "You've been distracted";
+            distBar.style.backgroundColor = "#be123c";
 
             ensureDomInjected();
             distBar.style.display = "flex";
             updateDisplayTimers();
+          } else {
+            // Issue 4 Fix: If site is not in restricted list, immediately hide distraction bar
+            isRestrictedPage = false;
+            distBar.style.display = "none";
           }
+        } else {
+          isRestrictedPage = false;
+          distBar.style.display = "none";
         }
       } catch (err) {
         console.warn("Immediate restricted check:", err);
       }
     };
 
-    // 4. REAL-TIME LOCAL TIMER DISPLAY (Deterministic tick - no drift, no double counting)
+    // 4. REAL-TIME LOCAL TIMER DISPLAY
+    // Right: shared domain usage (canonical snapshot + live tick while span open)
+    // Middle: per-tab visit lifetime from visitStartedAt (foreground or background)
     const updateDisplayTimers = () => {
       const now = Date.now();
 
@@ -950,32 +1025,44 @@ export default defineContentScript({
 
       // Distraction Bar Timers
       if (isRestrictedPage && visitStartedAt > 0) {
-        const effectiveVisitStart = sessionStartedAt > 0 && visitStartedAt > 0
-          ? Math.max(visitStartedAt, sessionStartedAt)
-          : visitStartedAt;
-
-        // 1. Center Timer: how long this particular tab has been open on this restricted site
-        const currentVisitSec = effectiveVisitStart > 0
-          ? Math.max(0, Math.floor((now - effectiveVisitStart) / 1000))
-          : 0;
-
-        // 2. Top-Right Corner Timer: accumulated time of THIS WEBSITE in this session
-        const baseUsageSec = baseSiteUsage > 0 ? Math.floor(baseSiteUsage / 1000) : 0;
-
-        const hasEarlierConcurrentTab =
-          domainStartedAt > 0 &&
-          domainStartedAt < effectiveVisitStart &&
-          sessionStartedAt > 0 &&
-          domainStartedAt >= sessionStartedAt;
-
-        const activeSpanSec = hasEarlierConcurrentTab
-          ? Math.max(0, Math.floor((now - domainStartedAt) / 1000))
-          : currentVisitSec;
-
-        let totalSiteSec = baseUsageSec + activeSpanSec;
+        // Right timer: shared domain usage across session (base accumulated ms + live span ms)
+        const liveSpanStart = domainSpanStartedAt > 0 ? domainSpanStartedAt : visitStartedAt;
+        const effectiveSpanStart =
+          liveSpanStart > 0 && sessionStartedAt > 0
+            ? Math.max(liveSpanStart, sessionStartedAt)
+            : liveSpanStart;
+        const liveAnchor =
+          domainSpanStartedAt === 0 && baseSiteUsageMs > 0
+            ? Math.max(effectiveSpanStart, pageLoadTime)
+            : effectiveSpanStart;
+        const liveMs = liveAnchor > 0 ? Math.max(0, now - liveAnchor) : 0;
+        let totalDurationMs = baseSiteUsageMs + liveMs;
         if (sessionStartedAt > 0) {
-          const maxSessionSec = Math.max(0, Math.floor((now - sessionStartedAt) / 1000));
-          totalSiteSec = Math.min(maxSessionSec, totalSiteSec);
+          const maxSessionMs = Math.max(0, now - sessionStartedAt);
+          if (totalDurationMs > maxSessionMs) {
+            totalDurationMs = maxSessionMs;
+          }
+        }
+        let totalSiteSec = Math.floor(totalDurationMs / 1000);
+
+        // Monotonic display guard: total session domain usage never decreases during active session
+        if (lastTotalSec >= 0 && totalSiteSec < lastTotalSec) {
+          totalSiteSec = lastTotalSec;
+        }
+
+        // Middle timer: independent per-tab visit lifetime (not capped by domain total)
+        const effectiveVisitStart =
+          sessionStartedAt > 0
+            ? Math.max(visitStartedAt, sessionStartedAt)
+            : visitStartedAt;
+        let currentVisitSec = Math.max(
+          0,
+          Math.floor((now - effectiveVisitStart) / 1000),
+        );
+
+        // Monotonic display guard: visit seconds never step backward
+        if (lastVisitSec >= 0 && currentVisitSec < lastVisitSec) {
+          currentVisitSec = lastVisitSec;
         }
 
         if (currentVisitSec !== lastVisitSec) {
@@ -996,17 +1083,20 @@ export default defineContentScript({
     const syncSite = async () => {
       if (isSyncing) return;
       isSyncing = true;
+      const syncSeq = ++latestSyncSeq;
 
       try {
+        const isVisible = document.visibilityState === "visible";
         const response = await browser.runtime.sendMessage({
           message: "check_site",
           hostname,
           tabInstanceId,
           tabVisitStartedAt: visitStartedAt,
+          isVisible,
         });
 
-        // If background worker is temporarily waking up, do not wipe state
-        if (!response) {
+        // If background worker is temporarily waking up, or response is stale, do not wipe state
+        if (!response || syncSeq !== latestSyncSeq) {
           return;
         }
 
@@ -1020,12 +1110,15 @@ export default defineContentScript({
           }
 
           persistVisitStart(0);
-          persistDomainStart(0);
+          persistDomainSpanStart(0);
           persistBaseUsage(0);
+          persistTabActiveMs(0);
           isRestrictedPage = false;
           visitStartedAt = 0;
-          domainStartedAt = 0;
-          baseSiteUsage = 0;
+          domainSpanStartedAt = 0;
+          baseSiteUsageMs = 0;
+          usageSnapshotSec = 0;
+          usageSnapshotAt = 0;
           sessionStartedAt = 0;
           lastVisitSec = -1;
           lastTotalSec = -1;
@@ -1043,6 +1136,20 @@ export default defineContentScript({
         }
 
         sessionStartedAt = response.sessionStartedAt ?? 0;
+
+        // Check if tabId returned reveals this is a duplicated tab
+        if (response.tabId !== undefined) {
+          try {
+            const storedTabId = sessionStorage.getItem(tabIdStorageKey);
+            if (storedTabId && storedTabId !== String(response.tabId)) {
+              // Different tab ID means this tab was duplicated from another tab!
+              tabInstanceId = generateUniqueInstanceId();
+              sessionStorage.setItem(instanceStorageKey, tabInstanceId);
+              persistVisitStart(response.visitStartedAt || pageLoadTime);
+            }
+            sessionStorage.setItem(tabIdStorageKey, String(response.tabId));
+          } catch {}
+        }
 
         // Active state badge styling
         statusDot.style.background = "#22c55e";
@@ -1082,59 +1189,88 @@ export default defineContentScript({
           return;
         }
 
-        // Restrict Mode & Monitored Sites in Block Mode
-        if (response.isRestricted) {
+        // Restrict Mode Only
+        if (response.isRestricted && response.mode === "restrict") {
           isRestrictedPage = true;
 
           const sStart = response.sessionStartedAt ?? sessionStartedAt;
           sessionStartedAt = sStart;
 
-          if (isRapidReload) {
-            const anchoredStart = getStoredVisitStart();
-            if (anchoredStart > 0) {
-              visitStartedAt = anchoredStart;
-            }
-          } else if (!visitStartedAt || visitStartedAt === 0) {
-            visitStartedAt = pageLoadTime;
-          }
+          // Canonical tab visit start from background — adopt if uninitialized or earlier (never shift into future)
           if (typeof response.visitStartedAt === "number" && response.visitStartedAt > 0) {
-            visitStartedAt = response.visitStartedAt;
-          }
-          persistVisitStart(visitStartedAt);
-
-          baseSiteUsage = typeof response.baseSiteUsage === "number" ? response.baseSiteUsage : 0;
-          persistBaseUsage(baseSiteUsage);
-          if (typeof response.domainStartedAt === "number" && response.domainStartedAt > 0) {
-            domainStartedAt = response.domainStartedAt;
-            persistDomainStart(domainStartedAt);
+            if (visitStartedAt === 0 || response.visitStartedAt <= visitStartedAt) {
+              visitStartedAt = response.visitStartedAt;
+              persistVisitStart(visitStartedAt);
+            }
           }
 
-          if (response.mode === "block") {
-            warning.textContent = "Focus Sprint Active (Block Mode)";
-            distBar.style.backgroundColor = "#e11d48";
+          // Shared domain span start — 0 means no live span (never use visitStartedAt)
+          if (typeof response.domainSpanStartedAt === "number" && response.domainSpanStartedAt > 0) {
+            domainSpanStartedAt = response.domainSpanStartedAt;
+          } else if (typeof response.domainStartedAt === "number" && response.domainStartedAt > 0) {
+            domainSpanStartedAt = response.domainStartedAt;
           } else {
-            warning.textContent = "You've been distracted";
-            distBar.style.backgroundColor = "#be123c";
+            domainSpanStartedAt = 0;
           }
+          persistDomainSpanStart(domainSpanStartedAt);
+
+          // Canonical base site usage from background (completed intervals only)
+          const rawBaseUsage =
+            typeof response.baseSiteUsageMs === "number"
+              ? response.baseSiteUsageMs
+              : (typeof response.baseSiteUsage === "number" ? response.baseSiteUsage : 0);
+          baseSiteUsageMs = rawBaseUsage;
+          persistBaseUsage(baseSiteUsageMs);
+
+          // Prefer background total snapshot (already = base + live span at response time)
+          const snapshotAt =
+            typeof response.usageSnapshotAt === "number" && response.usageSnapshotAt > 0
+              ? response.usageSnapshotAt
+              : Date.now();
+          if (typeof response.totalSiteUsageSec === "number" && response.totalSiteUsageSec >= 0) {
+            // Reconcile snapshot without letting a stale response overwrite newer timer state
+            if (snapshotAt >= usageSnapshotAt) {
+              usageSnapshotSec = response.totalSiteUsageSec;
+              usageSnapshotAt = snapshotAt;
+            }
+          } else {
+            let effectiveSpanStart = 0;
+            if (domainSpanStartedAt > 0) {
+              effectiveSpanStart =
+                sStart > 0 ? Math.max(domainSpanStartedAt, sStart) : domainSpanStartedAt;
+            } else if (baseSiteUsageMs === 0 && visitStartedAt > 0) {
+              effectiveSpanStart =
+                sStart > 0 ? Math.max(visitStartedAt, sStart) : visitStartedAt;
+            }
+            const liveMs =
+              effectiveSpanStart > 0 ? Math.max(0, snapshotAt - effectiveSpanStart) : 0;
+            const totalMs = baseSiteUsageMs + liveMs;
+            usageSnapshotSec = Math.floor(totalMs / 1000);
+            usageSnapshotAt = snapshotAt - (totalMs % 1000);
+          }
+
+          warning.textContent = "You've been distracted";
+          distBar.style.backgroundColor = "#be123c";
 
           ensureDomInjected();
           distBar.style.display = "flex";
           updateDisplayTimers();
         } else {
-          // Only tear down restricted UI if the session is inactive or page not restricted
-          if (!response.isActive || (response.mode !== "restrict" && response.mode !== "block")) {
-            isRestrictedPage = false;
-            visitStartedAt = 0;
-            persistVisitStart(0);
-            persistDomainStart(0);
-            persistBaseUsage(0);
-            domainStartedAt = 0;
-            baseSiteUsage = 0;
-            lastVisitSec = -1;
-            lastTotalSec = -1;
-            distBar.style.display = "none";
-            updateDisplayTimers();
-          }
+          // Site is not restricted — tear down distraction bar
+          isRestrictedPage = false;
+          visitStartedAt = 0;
+          domainSpanStartedAt = 0;
+          baseSiteUsageMs = 0;
+          usageSnapshotSec = 0;
+          usageSnapshotAt = 0;
+          persistVisitStart(0);
+          persistDomainSpanStart(0);
+          persistBaseUsage(0);
+          persistTabActiveMs(0);
+          lastVisitSec = -1;
+          lastTotalSec = -1;
+          distBar.style.display = "none";
+          updateDisplayTimers();
         }
       } catch (error) {
         console.error("Nudge sync error:", error);
@@ -1156,17 +1292,45 @@ export default defineContentScript({
       void syncSite();
     }, 3000);
 
-    // 9. RE-SYNC ON TAB VISIBILITY CHANGE
+    // 9. Visibility changes must not pause/reset domain or visit accounting.
+    // Keep displaying from current anchors; refresh heartbeat without wiping state.
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") {
+      void syncSite();
+    });
+
+    // 10. RE-SYNC ON SPA NAVIGATION & BFCACHE RESTORATION
+    const onLocationChange = () => {
+      void syncSite();
+    };
+
+    window.addEventListener("popstate", onLocationChange);
+
+    // Re-sync and reset leaving flag when page is restored from bfcache (Back/Forward button)
+    window.addEventListener("pageshow", (event) => {
+      hasNotifiedLeaving = false;
+      if (event.persisted) {
+        void checkImmediateBlock();
+        void checkImmediateRestricted();
         void syncSite();
       }
     });
 
-    // 10. RE-SYNC ON SPA NAVIGATION
-    window.addEventListener("popstate", () => {
-      void syncSite();
-    });
+    // Intercept pushState & replaceState for immediate reaction to in-page SPA navigations
+    try {
+      const origPush = history.pushState;
+      history.pushState = function (this: History, ...args: Parameters<History["pushState"]>) {
+        const ret = origPush.apply(this, args);
+        window.dispatchEvent(new Event("nudge_location_change"));
+        return ret;
+      };
+      const origReplace = history.replaceState;
+      history.replaceState = function (this: History, ...args: Parameters<History["replaceState"]>) {
+        const ret = origReplace.apply(this, args);
+        window.dispatchEvent(new Event("nudge_location_change"));
+        return ret;
+      };
+      window.addEventListener("nudge_location_change", onLocationChange);
+    } catch {}
 
     // 10b. NOTIFY BACKGROUND SCRIPT WHEN TAB CLOSES OR UNLOADS
     let hasNotifiedLeaving = false;
@@ -1194,7 +1358,9 @@ export default defineContentScript({
         changes.mode ||
         changes.blockedSites ||
         changes.restrictedSites ||
-        changes.startedAt
+        changes.startedAt ||
+        changes.domainSpans ||
+        changes.sessionSiteUsage
       ) {
         if (
           pageBlocked &&
@@ -1213,16 +1379,56 @@ export default defineContentScript({
             sessionStartedAt = newStart;
             // Clean reset when a new focus session starts
             if (newStart > 0) {
-              baseSiteUsage = 0;
+              baseSiteUsageMs = 0;
               persistBaseUsage(0);
+              persistTabActiveMs(0);
               visitStartedAt = pageLoadTime >= newStart ? pageLoadTime : newStart;
               persistVisitStart(visitStartedAt);
-              domainStartedAt = visitStartedAt;
-              persistDomainStart(domainStartedAt);
+              domainSpanStartedAt = 0;
+              persistDomainSpanStart(0);
+              usageSnapshotSec = 0;
+              usageSnapshotAt = 0;
               lastVisitSec = -1;
               lastTotalSec = -1;
               lastSessionSec = -1;
             }
+          }
+        }
+
+        // If mode changed to something other than "restrict", tear down distraction bar immediately
+        if (changes.mode && changes.mode.newValue !== "restrict") {
+          isRestrictedPage = false;
+          visitStartedAt = 0;
+          domainSpanStartedAt = 0;
+          baseSiteUsageMs = 0;
+          usageSnapshotSec = 0;
+          usageSnapshotAt = 0;
+          persistVisitStart(0);
+          persistDomainSpanStart(0);
+          persistBaseUsage(0);
+          persistTabActiveMs(0);
+          lastVisitSec = -1;
+          lastTotalSec = -1;
+          distBar.style.display = "none";
+        }
+
+        // If restrictedSites changed and current site is no longer restricted, tear down immediately
+        if (changes.restrictedSites && Array.isArray(changes.restrictedSites.newValue)) {
+          const newSites: string[] = changes.restrictedSites.newValue;
+          if (!isHostBlocked(hostname, newSites)) {
+            isRestrictedPage = false;
+            visitStartedAt = 0;
+            domainSpanStartedAt = 0;
+            baseSiteUsageMs = 0;
+            usageSnapshotSec = 0;
+            usageSnapshotAt = 0;
+            persistVisitStart(0);
+            persistDomainSpanStart(0);
+            persistBaseUsage(0);
+            persistTabActiveMs(0);
+            lastVisitSec = -1;
+            lastTotalSec = -1;
+            distBar.style.display = "none";
           }
         }
 
@@ -1233,12 +1439,15 @@ export default defineContentScript({
         // Only reset visit counters if the session actually ended
         if (changes.isActive?.newValue === false) {
           persistVisitStart(0);
-          persistDomainStart(0);
+          persistDomainSpanStart(0);
           persistBaseUsage(0);
+          persistTabActiveMs(0);
           isRestrictedPage = false;
           visitStartedAt = 0;
-          domainStartedAt = 0;
-          baseSiteUsage = 0;
+          domainSpanStartedAt = 0;
+          baseSiteUsageMs = 0;
+          usageSnapshotSec = 0;
+          usageSnapshotAt = 0;
           sessionStartedAt = 0;
           lastVisitSec = -1;
           lastTotalSec = -1;
