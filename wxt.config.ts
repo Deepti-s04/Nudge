@@ -20,6 +20,7 @@ export default defineConfig({
     description: 'A subtle distraction blocker and focus timer that gently nudges you back to productive work.',
     version: '1.0.0',
     permissions: ['storage', 'tabs'],
+    host_permissions: ['<all_urls>'],
     icons: {
       16: 'icon/16.png',
       32: 'icon/32.png',

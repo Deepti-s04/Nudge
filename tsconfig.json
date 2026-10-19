@@ -4,5 +4,11 @@
     "allowImportingTsExtensions": true,
     "allowJs": true,
     "jsx": "react-jsx"
-  }
+  },
+  "exclude": [
+    "node_modules",
+    ".output",
+    "part2",
+    "tests"
+  ]
 }

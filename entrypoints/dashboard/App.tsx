@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface SessionRecord {
   mode: string;
@@ -8,12 +8,19 @@ interface SessionRecord {
   siteUsage: Record<string, number>;
 }
 
+interface DomainSpan {
+  startedAt: number;
+  tabKeys: string[];
+  lastHeartbeat?: number;
+}
+
 interface StorageData {
   sessions?: SessionRecord[];
   isActive?: boolean;
   mode?: string;
   startedAt?: number;
   sessionSiteUsage?: Record<string, number>;
+  domainSpans?: Record<string, DomainSpan>;
   blockedSites?: string[];
   restrictedSites?: string[];
 }
@@ -27,6 +34,7 @@ interface DailyBarData {
 }
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+const NOT_ALLOWED_CURSOR = "not-allowed";
 
 // --- ELEGANT MINIMALIST SVG ICONS (CHIC & CRISP) ---
 function IconShield({ className = "w-4 h-4" }: { className?: string }) {
@@ -138,8 +146,9 @@ export default function App() {
     mode: "block",
     startedAt: 0,
     sessionSiteUsage: {},
-    blockedSites: ["x.com", "twitter.com"],
-    restrictedSites: ["youtube.com", "instagram.com"],
+    domainSpans: {},
+    blockedSites: [],
+    restrictedSites: [],
   });
 
   const [filterMode, setFilterMode] = useState<"all" | "block" | "restrict">("all");
@@ -160,6 +169,14 @@ export default function App() {
 
   // Mode Selection State for Starting Sessions
   const [selectedMode, setSelectedMode] = useState<"block" | "restrict">("block");
+  const [showBlockTooltip, setShowBlockTooltip] = useState(false);
+  const [showRestrictTooltip, setShowRestrictTooltip] = useState(false);
+
+  // Input states & refs for adding sites
+  const [newBlockedInput, setNewBlockedInput] = useState("");
+  const [newRestrictedInput, setNewRestrictedInput] = useState("");
+  const blockedInputRef = useRef<HTMLInputElement>(null);
+  const restrictedInputRef = useRef<HTMLInputElement>(null);
 
   // Sync theme with body and html
   useEffect(() => {
@@ -183,6 +200,7 @@ export default function App() {
         "mode",
         "startedAt",
         "sessionSiteUsage",
+        "domainSpans",
         "blockedSites",
         "restrictedSites",
       ])) as StorageData;
@@ -198,13 +216,25 @@ export default function App() {
         await browser.storage.local.set({ sessions: validSessions });
       }
 
+      const isActive = Boolean(stored.isActive);
+      const startedAt =
+        isActive && typeof stored.startedAt === "number" && stored.startedAt > 0
+          ? stored.startedAt
+          : 0;
+
       setData({
         ...stored,
+        isActive,
+        startedAt,
         sessions: validSessions,
       });
 
       if (stored.mode === "block" || stored.mode === "restrict") {
         setSelectedMode(stored.mode);
+      } else if ((stored.blockedSites ?? []).length > 0) {
+        setSelectedMode("block");
+      } else if ((stored.restrictedSites ?? []).length > 0) {
+        setSelectedMode("restrict");
       }
     } catch (err) {
       console.error("Failed to load dashboard data:", err);
@@ -223,7 +253,8 @@ export default function App() {
           changes.blockedSites !== undefined ||
           changes.restrictedSites !== undefined ||
           changes.sessions !== undefined ||
-          changes.sessionSiteUsage !== undefined
+          changes.sessionSiteUsage !== undefined ||
+          changes.domainSpans !== undefined
         ) {
           void loadData();
         }
@@ -261,6 +292,87 @@ export default function App() {
     } catch (err) {
       console.error("Failed to clear sessions:", err);
     }
+  };
+
+  // Site Management Handlers (matching popup functionality)
+  const normalizeDomain = (domain: string): string => {
+    return domain
+      .trim()
+      .toLowerCase()
+      .replace(/^https?:\/\//, "")
+      .replace(/^www\./, "")
+      .replace(/[/?#].*$/, "")
+      .trim();
+  };
+
+  const handleAddBlockedSite = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const domain = normalizeDomain(newBlockedInput);
+    const current = data.blockedSites ?? [];
+    if (!domain || current.includes(domain)) return;
+    const updated = [...current, domain];
+    if (domain === "x.com" && !updated.includes("twitter.com")) {
+      updated.push("twitter.com");
+    } else if (domain === "twitter.com" && !updated.includes("x.com")) {
+      updated.push("x.com");
+    }
+    setData((prev) => ({ ...prev, blockedSites: updated }));
+    setNewBlockedInput("");
+    await browser.storage.local.set({ blockedSites: updated });
+  };
+
+  const handleRemoveBlockedSite = async (siteToRemove: string) => {
+    let updated = (data.blockedSites ?? []).filter((s) => s !== siteToRemove);
+    if (siteToRemove === "x.com" || siteToRemove === "twitter.com") {
+      updated = updated.filter((s) => s !== "x.com" && s !== "twitter.com");
+    }
+    setData((prev) => ({ ...prev, blockedSites: updated }));
+    await browser.storage.local.set({ blockedSites: updated });
+  };
+
+  const handleClearAllBlocked = async () => {
+    setData((prev) => ({ ...prev, blockedSites: [] }));
+    await browser.storage.local.set({ blockedSites: [] });
+  };
+
+  const handleAddRestrictedSite = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const domain = normalizeDomain(newRestrictedInput);
+    const current = data.restrictedSites ?? [];
+    if (!domain || current.includes(domain)) return;
+    const updated = [...current, domain];
+    setData((prev) => ({ ...prev, restrictedSites: updated }));
+    setNewRestrictedInput("");
+    await browser.storage.local.set({ restrictedSites: updated });
+  };
+
+  const handleRemoveRestrictedSite = async (siteToRemove: string) => {
+    const updated = (data.restrictedSites ?? []).filter((s) => s !== siteToRemove);
+    setData((prev) => ({ ...prev, restrictedSites: updated }));
+    await browser.storage.local.set({ restrictedSites: updated });
+  };
+
+  const handleClearAllRestricted = async () => {
+    setData((prev) => ({ ...prev, restrictedSites: [] }));
+    await browser.storage.local.set({ restrictedSites: [] });
+  };
+
+  const scrollToSiteRules = (targetMode?: "block" | "restrict") => {
+    const el = document.getElementById("site-rules-section");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth" });
+    }
+    setTimeout(() => {
+      if (targetMode === "block") {
+        blockedInputRef.current?.focus();
+      } else if (targetMode === "restrict") {
+        restrictedInputRef.current?.focus();
+      } else if (selectedMode === "restrict") {
+        restrictedInputRef.current?.focus();
+      } else {
+        blockedInputRef.current?.focus();
+      }
+    }, 350);
   };
 
   const handleToggleSession = async () => {
@@ -318,6 +430,18 @@ export default function App() {
 
   // --- 30-DAY COMPUTATIONS ---
   const sessions = data.sessions ?? [];
+  const blockedSites = data.blockedSites ?? [];
+  const restrictedSites = data.restrictedSites ?? [];
+
+  const hasBlockedSites = blockedSites.length > 0;
+  const hasRestrictedSites = restrictedSites.length > 0;
+  const isBlockedDisabled = !data.isActive && !hasBlockedSites;
+  const isRestrictDisabled = !data.isActive && !hasRestrictedSites;
+  const isStartDisabled = !data.isActive && (
+    (!hasBlockedSites && !hasRestrictedSites) ||
+    (selectedMode === "block" && !hasBlockedSites) ||
+    (selectedMode === "restrict" && !hasRestrictedSites)
+  );
 
   const completedDurationMs = sessions.reduce((acc, s) => acc + (s.duration || 0), 0);
   const liveDurationMs =
@@ -374,12 +498,27 @@ export default function App() {
   }
 
   // Add live session usage if active
-  if (data.isActive && data.sessionSiteUsage) {
-    for (const [domain, duration] of Object.entries(data.sessionSiteUsage)) {
-      if (!restrictedAppsStats[domain]) {
-        restrictedAppsStats[domain] = { totalDuration: 0, sessionCount: 1 };
-      } else {
-        restrictedAppsStats[domain].totalDuration += duration;
+  if (data.isActive) {
+    const currentSessionDomains = new Set<string>([
+      ...Object.keys(data.sessionSiteUsage ?? {}),
+      ...Object.keys(data.domainSpans ?? {}),
+    ]);
+
+    for (const domain of currentSessionDomains) {
+      const completedUsage = data.sessionSiteUsage?.[domain] ?? 0;
+      const activeSpan = data.domainSpans?.[domain];
+      const spanStart = activeSpan
+        ? Math.max(activeSpan.startedAt, data.startedAt && data.startedAt > 0 ? data.startedAt : 0)
+        : 0;
+      const activeDuration = spanStart > 0 ? Math.max(0, now - spanStart) : 0;
+      const liveDuration = completedUsage + activeDuration;
+
+      if (liveDuration > 0) {
+        if (!restrictedAppsStats[domain]) {
+          restrictedAppsStats[domain] = { totalDuration: 0, sessionCount: 0 };
+        }
+        restrictedAppsStats[domain].totalDuration += liveDuration;
+        restrictedAppsStats[domain].sessionCount += 1;
       }
     }
   }
@@ -436,6 +575,16 @@ export default function App() {
       if (data.sessionSiteUsage) {
         dayDistractionMs += Object.values(data.sessionSiteUsage).reduce(
           (a, b) => a + b,
+          0,
+        );
+      }
+      if (data.domainSpans) {
+        const sStart = data.startedAt && data.startedAt > 0 ? data.startedAt : 0;
+        dayDistractionMs += Object.values(data.domainSpans).reduce(
+          (acc, span) => {
+            const spanStart = sStart > 0 ? Math.max(span.startedAt, sStart) : span.startedAt;
+            return acc + Math.max(0, now - spanStart);
+          },
           0,
         );
       }
@@ -541,56 +690,104 @@ export default function App() {
                   isDark ? "bg-neutral-900 border-neutral-800" : "bg-neutral-100 border-neutral-200"
                 }`}
               >
-                <button
-                  onClick={() => handleSelectMode("block")}
-                  title="Hard lockout screen on blocked sites"
-                  className={`px-2.5 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
-                    selectedMode === "block"
-                      ? isDark
-                        ? "bg-neutral-800 text-white shadow-sm border border-neutral-700"
-                        : "bg-white text-neutral-900 shadow-sm border border-neutral-300"
-                      : isDark
-                        ? "text-neutral-400 hover:text-neutral-200"
-                        : "text-neutral-500 hover:text-neutral-900"
-                  }`}
+                <div
+                  className="relative group"
+                  onMouseEnter={() => setShowBlockTooltip(true)}
+                  onMouseLeave={() => setShowBlockTooltip(false)}
+                  title={isBlockedDisabled ? "No blocked sites selected" : undefined}
                 >
-                  <IconShield className="w-3.5 h-3.5" />
-                  <span>Block</span>
-                </button>
+                  {showBlockTooltip && isBlockedDisabled && (
+                    <div className="absolute -top-8 left-1/2 -translate-x-1/2 z-30 px-2 py-0.5 rounded-md bg-neutral-800 border border-neutral-700 text-[10px] font-medium text-neutral-300 shadow-lg pointer-events-none whitespace-nowrap flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-neutral-500 shrink-0"></span>
+                      <span>No blocked sites selected</span>
+                    </div>
+                  )}
+                  <button
+                    disabled={data.isActive || isBlockedDisabled}
+                    onClick={() => !data.isActive && hasBlockedSites && handleSelectMode("block")}
+                    style={isBlockedDisabled ? { cursor: NOT_ALLOWED_CURSOR } : undefined}
+                    className={`px-2.5 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 ${
+                      isBlockedDisabled
+                        ? isDark
+                          ? "text-neutral-600 border-transparent opacity-50 cursor-not-allowed"
+                          : "text-neutral-400 border-transparent opacity-50 cursor-not-allowed"
+                        : selectedMode === "block"
+                          ? isDark
+                            ? "bg-neutral-800 text-white shadow-sm border border-neutral-700 cursor-pointer"
+                            : "bg-white text-neutral-900 shadow-sm border border-neutral-300 cursor-pointer"
+                          : isDark
+                            ? "text-neutral-400 hover:text-neutral-200 cursor-pointer"
+                            : "text-neutral-500 hover:text-neutral-900 cursor-pointer"
+                    }`}
+                  >
+                    <IconShield className="w-3.5 h-3.5" />
+                    <span>Block</span>
+                  </button>
+                </div>
 
-                <button
-                  onClick={() => handleSelectMode("restrict")}
-                  title="Soft warning bar & distraction timers"
-                  className={`px-2.5 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
-                    selectedMode === "restrict"
-                      ? isDark
-                        ? "bg-neutral-800 text-white shadow-sm border border-neutral-700"
-                        : "bg-white text-neutral-900 shadow-sm border border-neutral-300"
-                      : isDark
-                        ? "text-neutral-400 hover:text-neutral-200"
-                        : "text-neutral-500 hover:text-neutral-900"
-                  }`}
+                <div
+                  className="relative group"
+                  onMouseEnter={() => setShowRestrictTooltip(true)}
+                  onMouseLeave={() => setShowRestrictTooltip(false)}
+                  title={isRestrictDisabled ? "No restricted sites selected" : undefined}
                 >
-                  <IconClock className="w-3.5 h-3.5" />
-                  <span>Restrict</span>
-                </button>
+                  {showRestrictTooltip && isRestrictDisabled && (
+                    <div className="absolute -top-8 left-1/2 -translate-x-1/2 z-30 px-2 py-0.5 rounded-md bg-neutral-800 border border-neutral-700 text-[10px] font-medium text-neutral-300 shadow-lg pointer-events-none whitespace-nowrap flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-neutral-500 shrink-0"></span>
+                      <span>No restricted sites selected</span>
+                    </div>
+                  )}
+                  <button
+                    disabled={data.isActive || isRestrictDisabled}
+                    onClick={() => !data.isActive && hasRestrictedSites && handleSelectMode("restrict")}
+                    style={isRestrictDisabled ? { cursor: NOT_ALLOWED_CURSOR } : undefined}
+                    className={`px-2.5 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 ${
+                      isRestrictDisabled
+                        ? isDark
+                          ? "text-neutral-600 border-transparent opacity-50 cursor-not-allowed"
+                          : "text-neutral-400 border-transparent opacity-50 cursor-not-allowed"
+                        : selectedMode === "restrict"
+                          ? isDark
+                            ? "bg-neutral-800 text-white shadow-sm border border-neutral-700 cursor-pointer"
+                            : "bg-white text-neutral-900 shadow-sm border border-neutral-300 cursor-pointer"
+                          : isDark
+                            ? "text-neutral-400 hover:text-neutral-200 cursor-pointer"
+                            : "text-neutral-500 hover:text-neutral-900 cursor-pointer"
+                    }`}
+                  >
+                    <IconClock className="w-3.5 h-3.5" />
+                    <span>Restrict</span>
+                  </button>
+                </div>
               </div>
             )}
 
             {/* Primary Action Button (Start / Stop) */}
             <button
+              disabled={isStartDisabled}
               onClick={handleToggleSession}
-              className={`px-4 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-sm ${
+              style={isStartDisabled ? { cursor: NOT_ALLOWED_CURSOR } : undefined}
+              className={`px-4 py-1.5 rounded-xl text-xs font-semibold transition-all shadow-sm ${
                 data.isActive
                   ? isDark
-                    ? "bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30"
-                    : "bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200"
-                  : isDark
-                    ? "bg-white hover:bg-neutral-200 text-neutral-950 border border-white"
-                    : "bg-neutral-950 hover:bg-neutral-800 text-white border border-neutral-950"
+                    ? "bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 cursor-pointer"
+                    : "bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer"
+                  : isStartDisabled
+                    ? isDark
+                      ? "bg-neutral-900/60 text-neutral-600 border border-neutral-800/80 opacity-60 cursor-not-allowed"
+                      : "bg-neutral-100 text-neutral-400 border border-neutral-200 opacity-60 cursor-not-allowed"
+                    : isDark
+                      ? "bg-white hover:bg-neutral-200 text-neutral-950 border border-white cursor-pointer"
+                      : "bg-neutral-950 hover:bg-neutral-800 text-white border border-neutral-950 cursor-pointer"
               }`}
             >
-              {data.isActive ? "Stop Focus" : `Start Focus (${selectedMode.toUpperCase()})`}
+              {data.isActive
+                ? "Stop Focus"
+                : !hasBlockedSites && !hasRestrictedSites
+                  ? "Add Sites in Settings to Start"
+                  : (selectedMode === "block" && !hasBlockedSites) || (selectedMode === "restrict" && !hasRestrictedSites)
+                    ? `No ${selectedMode === "block" ? "Blocked" : "Restricted"} Sites Selected`
+                    : `Start Focus (${selectedMode.toUpperCase()})`}
             </button>
 
             {/* Dark / Light Mode Switcher */}
@@ -687,29 +884,117 @@ export default function App() {
               </div>
 
               <button
+                disabled={isStartDisabled}
                 onClick={handleToggleSession}
-                className={`px-5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-sm ${
-                  isDark
-                    ? "bg-white hover:bg-neutral-200 text-neutral-950"
-                    : "bg-neutral-950 hover:bg-neutral-800 text-white"
+                style={isStartDisabled ? { cursor: NOT_ALLOWED_CURSOR } : undefined}
+                className={`px-5 py-2 rounded-xl text-xs font-semibold transition-all shadow-sm ${
+                  isStartDisabled
+                    ? isDark
+                      ? "bg-neutral-900/60 text-neutral-600 border border-neutral-800/80 opacity-60 cursor-not-allowed"
+                      : "bg-neutral-100 text-neutral-400 border border-neutral-200 opacity-60 cursor-not-allowed"
+                    : isDark
+                      ? "bg-white hover:bg-neutral-200 text-neutral-950 cursor-pointer"
+                      : "bg-neutral-950 hover:bg-neutral-800 text-white cursor-pointer"
                 }`}
               >
-                Start {selectedMode === "block" ? "Block" : "Restrict"} Sprint →
+                {data.isActive
+                  ? "Stop Focus Session"
+                  : !hasBlockedSites && !hasRestrictedSites
+                    ? "Add Sites in Settings to Start"
+                    : (selectedMode === "block" && !hasBlockedSites) || (selectedMode === "restrict" && !hasRestrictedSites)
+                      ? `No ${selectedMode === "block" ? "Blocked" : "Restricted"} Sites Selected`
+                      : `Start ${selectedMode === "block" ? "Block" : "Restrict"} Sprint →`}
               </button>
             </div>
+
+            {/* Subtle info pills when no sites are configured */}
+            {!hasBlockedSites && !hasRestrictedSites && (
+              <div
+                className={`flex items-center justify-between px-3.5 py-2 rounded-xl border text-xs mb-3.5 ${
+                  isDark
+                    ? "bg-neutral-900/60 border-neutral-800/80 text-neutral-400"
+                    : "bg-neutral-100/70 border-neutral-200 text-neutral-600"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-neutral-500 shrink-0"></span>
+                  <span className="text-[11px]">No sites configured</span>
+                </div>
+                <button
+                  onClick={() => scrollToSiteRules(selectedMode)}
+                  className={`text-[10px] underline cursor-pointer ${
+                    isDark ? "text-neutral-300 hover:text-white" : "text-neutral-700 hover:text-neutral-950"
+                  }`}
+                >
+                  Add sites →
+                </button>
+              </div>
+            )}
+
+            {!hasBlockedSites && hasRestrictedSites && selectedMode === "block" && (
+              <div
+                className={`flex items-center justify-between px-3.5 py-2 rounded-xl border text-xs mb-3.5 ${
+                  isDark
+                    ? "bg-neutral-900/60 border-neutral-800/80 text-neutral-400"
+                    : "bg-neutral-100/70 border-neutral-200 text-neutral-600"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-neutral-500 shrink-0"></span>
+                  <span className="text-[11px]">No blocked sites selected</span>
+                </div>
+                <button
+                  onClick={() => scrollToSiteRules("block")}
+                  className={`text-[10px] underline cursor-pointer ${
+                    isDark ? "text-neutral-300 hover:text-white" : "text-neutral-700 hover:text-neutral-950"
+                  }`}
+                >
+                  Add sites →
+                </button>
+              </div>
+            )}
+
+            {!hasRestrictedSites && hasBlockedSites && selectedMode === "restrict" && (
+              <div
+                className={`flex items-center justify-between px-3.5 py-2 rounded-xl border text-xs mb-3.5 ${
+                  isDark
+                    ? "bg-neutral-900/60 border-neutral-800/80 text-neutral-400"
+                    : "bg-neutral-100/70 border-neutral-200 text-neutral-600"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-neutral-500 shrink-0"></span>
+                  <span className="text-[11px]">No restricted sites selected</span>
+                </div>
+                <button
+                  onClick={() => scrollToSiteRules("restrict")}
+                  className={`text-[10px] underline cursor-pointer ${
+                    isDark ? "text-neutral-300 hover:text-white" : "text-neutral-700 hover:text-neutral-950"
+                  }`}
+                >
+                  Add sites →
+                </button>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {/* Option 1: Block Mode */}
               <div
-                onClick={() => handleSelectMode("block")}
-                className={`p-4 rounded-xl border transition-all cursor-pointer ${
-                  selectedMode === "block"
+                onClick={() => !isBlockedDisabled && handleSelectMode("block")}
+                style={isBlockedDisabled ? { cursor: NOT_ALLOWED_CURSOR } : undefined}
+                title={isBlockedDisabled ? "No blocked sites selected" : undefined}
+                className={`p-4 rounded-xl border transition-all ${
+                  isBlockedDisabled
                     ? isDark
-                      ? "bg-neutral-850/80 border-neutral-600 ring-1 ring-neutral-500/30"
-                      : "bg-neutral-50/80 border-neutral-900 ring-1 ring-neutral-900/10"
-                    : isDark
-                      ? "bg-neutral-900/20 border-neutral-800 hover:border-neutral-700"
-                      : "bg-white border-neutral-200 hover:border-neutral-300"
+                      ? "bg-neutral-900/10 border-neutral-850 opacity-40 cursor-not-allowed"
+                      : "bg-neutral-100/50 border-neutral-200 opacity-40 cursor-not-allowed"
+                    : selectedMode === "block"
+                      ? isDark
+                        ? "bg-neutral-850/80 border-neutral-600 ring-1 ring-neutral-500/30 cursor-pointer"
+                        : "bg-neutral-50/80 border-neutral-900 ring-1 ring-neutral-900/10 cursor-pointer"
+                      : isDark
+                        ? "bg-neutral-900/20 border-neutral-800 hover:border-neutral-700 cursor-pointer"
+                        : "bg-white border-neutral-200 hover:border-neutral-300 cursor-pointer"
                 }`}
               >
                 <div className="flex items-center justify-between mb-2">
@@ -750,15 +1035,21 @@ export default function App() {
 
               {/* Option 2: Restrict Mode */}
               <div
-                onClick={() => handleSelectMode("restrict")}
-                className={`p-4 rounded-xl border transition-all cursor-pointer ${
-                  selectedMode === "restrict"
+                onClick={() => !isRestrictDisabled && handleSelectMode("restrict")}
+                style={isRestrictDisabled ? { cursor: NOT_ALLOWED_CURSOR } : undefined}
+                title={isRestrictDisabled ? "No restricted sites selected" : undefined}
+                className={`p-4 rounded-xl border transition-all ${
+                  isRestrictDisabled
                     ? isDark
-                      ? "bg-neutral-850/80 border-neutral-600 ring-1 ring-neutral-500/30"
-                      : "bg-neutral-50/80 border-neutral-900 ring-1 ring-neutral-900/10"
-                    : isDark
-                      ? "bg-neutral-900/20 border-neutral-800 hover:border-neutral-700"
-                      : "bg-white border-neutral-200 hover:border-neutral-300"
+                      ? "bg-neutral-900/10 border-neutral-850 opacity-40 cursor-not-allowed"
+                      : "bg-neutral-100/50 border-neutral-200 opacity-40 cursor-not-allowed"
+                    : selectedMode === "restrict"
+                      ? isDark
+                        ? "bg-neutral-850/80 border-neutral-600 ring-1 ring-neutral-500/30 cursor-pointer"
+                        : "bg-neutral-50/80 border-neutral-900 ring-1 ring-neutral-900/10 cursor-pointer"
+                      : isDark
+                        ? "bg-neutral-900/20 border-neutral-800 hover:border-neutral-700 cursor-pointer"
+                        : "bg-white border-neutral-200 hover:border-neutral-300 cursor-pointer"
                 }`}
               >
                 <div className="flex items-center justify-between mb-2">
@@ -1375,6 +1666,7 @@ export default function App() {
 
           {/* Right Column: Protected Domains & Retention Policy */}
           <div
+            id="site-rules-section"
             className={`rounded-2xl border p-6 space-y-6 transition-colors ${
               isDark
                 ? "bg-neutral-900/50 border-neutral-800"
@@ -1409,57 +1701,193 @@ export default function App() {
               </div>
 
               {/* Blocked Sites */}
-              <div className="space-y-2">
+              <div
+                className={`p-3.5 rounded-xl border space-y-2.5 transition-colors ${
+                  isDark ? "bg-neutral-900/60 border-neutral-800" : "bg-neutral-50/80 border-neutral-200"
+                }`}
+              >
                 <div className="flex items-center justify-between text-xs font-semibold">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-                    <span>Hard Blocked Sites</span>
-                  </span>
-                  <span className={`text-[10px] ${isDark ? "text-neutral-500" : "text-neutral-400"}`}>
-                    Full lockout
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {(data.blockedSites ?? ["twitter.com"]).map((site) => (
-                    <span
-                      key={site}
-                      className={`text-xs px-2.5 py-1 rounded-lg border font-mono ${
-                        isDark
-                          ? "bg-neutral-800 text-neutral-300 border-neutral-700"
-                          : "bg-neutral-100 text-neutral-800 border-neutral-200"
-                      }`}
-                    >
-                      {site}
+                  <div>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                      <span>Hard Blocked Sites</span>
                     </span>
-                  ))}
+                    <span className={`text-[10px] font-normal block ${isDark ? "text-neutral-400" : "text-neutral-500"}`}>
+                      Full lockout screen during Block mode
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {(data.blockedSites ?? []).length > 0 && (
+                      <button
+                        onClick={handleClearAllBlocked}
+                        className={`text-[11px] font-normal transition-colors cursor-pointer ${
+                          isDark ? "text-neutral-400 hover:text-rose-400" : "text-neutral-500 hover:text-rose-600"
+                        }`}
+                        title="Remove all blocked sites"
+                      >
+                        Clear all
+                      </button>
+                    )}
+                    <span className="text-[10px] text-rose-500 font-mono font-medium px-2 py-0.5 rounded-full bg-rose-500/10 border border-rose-500/20">
+                      {(data.blockedSites ?? []).length} active
+                    </span>
+                  </div>
                 </div>
+
+                {/* Tag List */}
+                <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto">
+                  {(data.blockedSites ?? []).length === 0 ? (
+                    <span className={`text-xs italic ${isDark ? "text-neutral-500" : "text-neutral-400"}`}>
+                      No blocked sites added
+                    </span>
+                  ) : (
+                    (data.blockedSites ?? []).map((site) => (
+                      <span
+                        key={site}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-mono text-xs transition-colors ${
+                          isDark
+                            ? "bg-neutral-800 text-neutral-300 border-neutral-700"
+                            : "bg-white text-neutral-800 border-neutral-300 shadow-2xs"
+                        }`}
+                      >
+                        <span>{site}</span>
+                        <button
+                          onClick={() => handleRemoveBlockedSite(site)}
+                          className="text-neutral-400 hover:text-rose-400 cursor-pointer text-sm leading-none ml-0.5"
+                          title={`Remove ${site}`}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))
+                  )}
+                </div>
+
+                {/* Add Form */}
+                <form onSubmit={handleAddBlockedSite} className="flex gap-2 pt-1">
+                  <input
+                    ref={blockedInputRef}
+                    type="text"
+                    placeholder="e.g. twitter.com or x.com"
+                    value={newBlockedInput}
+                    onChange={(e) => setNewBlockedInput(e.target.value)}
+                    className={`flex-1 rounded-xl px-3 py-1.5 text-xs font-mono transition-all border outline-none ${
+                      isDark
+                        ? "bg-neutral-950 border-neutral-800 text-white placeholder-neutral-500 focus:border-neutral-600 focus:ring-1 focus:ring-neutral-600"
+                        : "bg-white border-neutral-300 text-neutral-900 placeholder-neutral-400 focus:border-neutral-400 focus:ring-1 focus:ring-neutral-400"
+                    }`}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!newBlockedInput.trim()}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shadow-sm ${
+                      !newBlockedInput.trim()
+                        ? isDark
+                          ? "bg-neutral-800 text-neutral-600 opacity-50 cursor-not-allowed"
+                          : "bg-neutral-200 text-neutral-400 opacity-50 cursor-not-allowed"
+                        : isDark
+                          ? "bg-white hover:bg-neutral-200 text-neutral-950 cursor-pointer"
+                          : "bg-neutral-950 hover:bg-neutral-800 text-white cursor-pointer"
+                    }`}
+                  >
+                    + Add
+                  </button>
+                </form>
               </div>
 
               {/* Restricted Sites */}
-              <div className="space-y-2">
+              <div
+                className={`p-3.5 rounded-xl border space-y-2.5 transition-colors ${
+                  isDark ? "bg-neutral-900/60 border-neutral-800" : "bg-neutral-50/80 border-neutral-200"
+                }`}
+              >
                 <div className="flex items-center justify-between text-xs font-semibold">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                    <span>Restricted Sites</span>
-                  </span>
-                  <span className={`text-[10px] ${isDark ? "text-neutral-500" : "text-neutral-400"}`}>
-                    Distraction banner
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {(data.restrictedSites ?? ["youtube.com", "instagram.com"]).map((site) => (
-                    <span
-                      key={site}
-                      className={`text-xs px-2.5 py-1 rounded-lg border font-mono ${
-                        isDark
-                          ? "bg-neutral-800 text-neutral-300 border-neutral-700"
-                          : "bg-neutral-100 text-neutral-800 border-neutral-200"
-                      }`}
-                    >
-                      {site}
+                  <div>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                      <span>Restricted Sites</span>
                     </span>
-                  ))}
+                    <span className={`text-[10px] font-normal block ${isDark ? "text-neutral-400" : "text-neutral-500"}`}>
+                      Shows reminder banner & distraction timer
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {(data.restrictedSites ?? []).length > 0 && (
+                      <button
+                        onClick={handleClearAllRestricted}
+                        className={`text-[11px] font-normal transition-colors cursor-pointer ${
+                          isDark ? "text-neutral-400 hover:text-rose-400" : "text-neutral-500 hover:text-rose-600"
+                        }`}
+                        title="Remove all restricted sites"
+                      >
+                        Clear all
+                      </button>
+                    )}
+                    <span className="text-[10px] text-amber-500 font-mono font-medium px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20">
+                      {(data.restrictedSites ?? []).length} active
+                    </span>
+                  </div>
                 </div>
+
+                {/* Tag List */}
+                <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto">
+                  {(data.restrictedSites ?? []).length === 0 ? (
+                    <span className={`text-xs italic ${isDark ? "text-neutral-500" : "text-neutral-400"}`}>
+                      No restricted sites added
+                    </span>
+                  ) : (
+                    (data.restrictedSites ?? []).map((site) => (
+                      <span
+                        key={site}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border font-mono text-xs transition-colors ${
+                          isDark
+                            ? "bg-neutral-800 text-neutral-300 border-neutral-700"
+                            : "bg-white text-neutral-800 border-neutral-300 shadow-2xs"
+                        }`}
+                      >
+                        <span>{site}</span>
+                        <button
+                          onClick={() => handleRemoveRestrictedSite(site)}
+                          className="text-neutral-400 hover:text-rose-400 cursor-pointer text-sm leading-none ml-0.5"
+                          title={`Remove ${site}`}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))
+                  )}
+                </div>
+
+                {/* Add Form */}
+                <form onSubmit={handleAddRestrictedSite} className="flex gap-2 pt-1">
+                  <input
+                    ref={restrictedInputRef}
+                    type="text"
+                    placeholder="e.g. reddit.com or youtube.com"
+                    value={newRestrictedInput}
+                    onChange={(e) => setNewRestrictedInput(e.target.value)}
+                    className={`flex-1 rounded-xl px-3 py-1.5 text-xs font-mono transition-all border outline-none ${
+                      isDark
+                        ? "bg-neutral-950 border-neutral-800 text-white placeholder-neutral-500 focus:border-neutral-600 focus:ring-1 focus:ring-neutral-600"
+                        : "bg-white border-neutral-300 text-neutral-900 placeholder-neutral-400 focus:border-neutral-400 focus:ring-1 focus:ring-neutral-400"
+                    }`}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!newRestrictedInput.trim()}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shadow-sm ${
+                      !newRestrictedInput.trim()
+                        ? isDark
+                          ? "bg-neutral-800 text-neutral-600 opacity-50 cursor-not-allowed"
+                          : "bg-neutral-200 text-neutral-400 opacity-50 cursor-not-allowed"
+                        : isDark
+                          ? "bg-white hover:bg-neutral-200 text-neutral-950 cursor-pointer"
+                          : "bg-neutral-950 hover:bg-neutral-800 text-white cursor-pointer"
+                    }`}
+                  >
+                    + Add
+                  </button>
+                </form>
               </div>
             </div>
           </div>

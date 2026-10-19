@@ -24,8 +24,9 @@ interface DayBar {
   isToday: boolean;
 }
 
-const DEFAULT_BLOCKED_SITES = ["x.com", "twitter.com"];
-const DEFAULT_RESTRICTED_SITES = ["youtube.com", "instagram.com"];
+const DEFAULT_BLOCKED_SITES: string[] = [];
+const DEFAULT_RESTRICTED_SITES: string[] = [];
+const NOT_ALLOWED_CURSOR = "not-allowed";
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 export default function App() {
@@ -37,10 +38,14 @@ export default function App() {
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
 
   // Site Management State
-  const [blockedSites, setBlockedSites] = useState<string[]>(DEFAULT_BLOCKED_SITES);
-  const [restrictedSites, setRestrictedSites] = useState<string[]>(DEFAULT_RESTRICTED_SITES);
+  const [blockedSites, setBlockedSites] = useState<string[]>([]);
+  const [restrictedSites, setRestrictedSites] = useState<string[]>([]);
   const [newBlockedInput, setNewBlockedInput] = useState("");
   const [newRestrictedInput, setNewRestrictedInput] = useState("");
+
+  // Mode hover tooltips
+  const [showBlockTooltip, setShowBlockTooltip] = useState(false);
+  const [showRestrictTooltip, setShowRestrictTooltip] = useState(false);
 
   const loadPopupData = async () => {
     try {
@@ -55,15 +60,35 @@ export default function App() {
 
       const active = Boolean(result.isActive);
       const start =
-        typeof result.startedAt === "number" && result.startedAt > 0
+        active && typeof result.startedAt === "number" && result.startedAt > 0
           ? result.startedAt
           : 0;
 
       setIsActive(active);
       setStartedAt(start);
 
+      // Clean up legacy dummy sites if present
+      let bSites: string[] = Array.isArray(result.blockedSites) ? result.blockedSites : [];
+      if (bSites.length === 2 && bSites.includes("x.com") && bSites.includes("twitter.com")) {
+        bSites = [];
+        await browser.storage.local.set({ blockedSites: [] });
+      }
+
+      let rSites: string[] = Array.isArray(result.restrictedSites) ? result.restrictedSites : [];
+      if (rSites.length === 2 && rSites.includes("youtube.com") && rSites.includes("instagram.com")) {
+        rSites = [];
+        await browser.storage.local.set({ restrictedSites: [] });
+      }
+
+      setBlockedSites(bSites);
+      setRestrictedSites(rSites);
+
       if (result.mode) {
         setMode(result.mode);
+      } else if (bSites.length > 0) {
+        setMode("block");
+      } else if (rSites.length > 0) {
+        setMode("restrict");
       }
 
       if (active && start > 0) {
@@ -77,18 +102,6 @@ export default function App() {
         (s) => s.startedAt >= cutoff,
       );
       setSessions(validSessions);
-
-      if (result.blockedSites && result.blockedSites.length > 0) {
-        setBlockedSites(result.blockedSites);
-      } else {
-        setBlockedSites(DEFAULT_BLOCKED_SITES);
-      }
-
-      if (result.restrictedSites && result.restrictedSites.length > 0) {
-        setRestrictedSites(result.restrictedSites);
-      } else {
-        setRestrictedSites(DEFAULT_RESTRICTED_SITES);
-      }
     } catch (err) {
       console.error("Failed to load popup data:", err);
     }
@@ -136,15 +149,18 @@ export default function App() {
 
   const handleToggleSession = async () => {
     if (!isActive) {
-      const now = Date.now();
       const response = await browser.runtime.sendMessage({
         message: "start_session",
         mode,
       });
       if (response?.success) {
         setIsActive(true);
-        setStartedAt(now);
-        setElapsedTime(0);
+        const canonicalStart =
+          typeof response.startedAt === "number" && response.startedAt > 0
+            ? response.startedAt
+            : Date.now();
+        setStartedAt(canonicalStart);
+        setElapsedTime(Math.max(0, Date.now() - canonicalStart));
       }
     } else {
       await browser.runtime.sendMessage({
@@ -189,9 +205,17 @@ export default function App() {
   };
 
   const handleRemoveBlockedSite = async (siteToRemove: string) => {
-    const updated = blockedSites.filter((s) => s !== siteToRemove);
+    let updated = blockedSites.filter((s) => s !== siteToRemove);
+    if (siteToRemove === "x.com" || siteToRemove === "twitter.com") {
+      updated = updated.filter((s) => s !== "x.com" && s !== "twitter.com");
+    }
     setBlockedSites(updated);
     await browser.storage.local.set({ blockedSites: updated });
+  };
+
+  const handleClearAllBlocked = async () => {
+    setBlockedSites([]);
+    await browser.storage.local.set({ blockedSites: [] });
   };
 
   const handleAddRestrictedSite = async (e?: React.FormEvent) => {
@@ -208,6 +232,11 @@ export default function App() {
     const updated = restrictedSites.filter((s) => s !== siteToRemove);
     setRestrictedSites(updated);
     await browser.storage.local.set({ restrictedSites: updated });
+  };
+
+  const handleClearAllRestricted = async () => {
+    setRestrictedSites([]);
+    await browser.storage.local.set({ restrictedSites: [] });
   };
 
   // Time formatters
@@ -282,6 +311,16 @@ export default function App() {
     });
   }
 
+  const hasBlockedSites = blockedSites.length > 0;
+  const hasRestrictedSites = restrictedSites.length > 0;
+  const isBlockedDisabled = !isActive && !hasBlockedSites;
+  const isRestrictDisabled = !isActive && !hasRestrictedSites;
+  const isStartDisabled = !isActive && (
+    (!hasBlockedSites && !hasRestrictedSites) ||
+    (mode === "block" && !hasBlockedSites) ||
+    (mode === "restrict" && !hasRestrictedSites)
+  );
+
   return (
     <div className="w-[360px] bg-zinc-950 text-zinc-100 p-4 font-sans select-none min-h-[440px] flex flex-col justify-between">
       {/* VIEW 1: MAIN FOCUS TIMER */}
@@ -352,41 +391,133 @@ export default function App() {
 
             {/* Mode Selector */}
             <div className="grid grid-cols-2 gap-2">
-              <button
-                disabled={isActive}
-                onClick={() => !isActive && setMode("block")}
-                className={`py-2 px-3 rounded-xl text-xs font-medium border transition-all cursor-pointer ${
-                  mode === "block"
-                    ? "bg-zinc-800 text-white border-zinc-650 shadow-sm"
-                    : "bg-zinc-850/40 text-zinc-400 border-zinc-800 hover:text-zinc-200"
-                } ${isActive ? "opacity-50 cursor-not-allowed" : ""}`}
+              {/* Block Option */}
+              <div
+                className="relative group"
+                onMouseEnter={() => setShowBlockTooltip(true)}
+                onMouseLeave={() => setShowBlockTooltip(false)}
+                title={isBlockedDisabled ? "No blocked sites selected" : undefined}
               >
-                🔒 Block
-              </button>
+                {/* Floating Tooltip */}
+                {showBlockTooltip && isBlockedDisabled && (
+                  <div className="absolute -top-7 left-1/2 -translate-x-1/2 z-30 px-2 py-0.5 rounded-md bg-zinc-850 border border-zinc-750 text-[10px] font-medium text-zinc-300 shadow-lg pointer-events-none whitespace-nowrap flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 shrink-0"></span>
+                    <span>No blocked sites selected</span>
+                  </div>
+                )}
 
-              <button
-                disabled={isActive}
-                onClick={() => !isActive && setMode("restrict")}
-                className={`py-2 px-3 rounded-xl text-xs font-medium border transition-all cursor-pointer ${
-                  mode === "restrict"
-                    ? "bg-zinc-800 text-white border-zinc-650 shadow-sm"
-                    : "bg-zinc-850/40 text-zinc-400 border-zinc-800 hover:text-zinc-200"
-                } ${isActive ? "opacity-50 cursor-not-allowed" : ""}`}
+                <button
+                  disabled={isActive || isBlockedDisabled}
+                  onClick={() => !isActive && hasBlockedSites && setMode("block")}
+                  className={`w-full py-2 px-3 rounded-xl text-xs font-medium border transition-all ${
+                    isBlockedDisabled
+                      ? "bg-zinc-900/30 text-zinc-500 border-zinc-800/50 cursor-not-allowed opacity-50"
+                      : mode === "block"
+                        ? "bg-zinc-800 text-white border-zinc-650 shadow-sm cursor-pointer"
+                        : "bg-zinc-850/40 text-zinc-400 border-zinc-800 hover:text-zinc-200 cursor-pointer"
+                  } ${isActive ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  🔒 Block
+                </button>
+              </div>
+
+              {/* Restrict Option */}
+              <div
+                className="relative group"
+                onMouseEnter={() => setShowRestrictTooltip(true)}
+                onMouseLeave={() => setShowRestrictTooltip(false)}
+                title={isRestrictDisabled ? "No restricted sites selected" : undefined}
               >
-                ⏱️ Restrict
-              </button>
+                {/* Floating Tooltip */}
+                {showRestrictTooltip && isRestrictDisabled && (
+                  <div className="absolute -top-7 left-1/2 -translate-x-1/2 z-30 px-2 py-0.5 rounded-md bg-zinc-850 border border-zinc-750 text-[10px] font-medium text-zinc-300 shadow-lg pointer-events-none whitespace-nowrap flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 shrink-0"></span>
+                    <span>No restricted sites selected</span>
+                  </div>
+                )}
+
+                <button
+                  disabled={isActive || isRestrictDisabled}
+                  onClick={() => !isActive && hasRestrictedSites && setMode("restrict")}
+                  className={`w-full py-2 px-3 rounded-xl text-xs font-medium border transition-all ${
+                    isRestrictDisabled
+                      ? "bg-zinc-900/30 text-zinc-500 border-zinc-800/50 cursor-not-allowed opacity-50"
+                      : mode === "restrict"
+                        ? "bg-zinc-800 text-white border-zinc-650 shadow-sm cursor-pointer"
+                        : "bg-zinc-850/40 text-zinc-400 border-zinc-800 hover:text-zinc-200 cursor-pointer"
+                  } ${isActive ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  ⏱️ Restrict
+                </button>
+              </div>
             </div>
+
+            {/* Subtle info pills when no sites are configured */}
+            {!hasBlockedSites && !hasRestrictedSites && (
+              <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 text-zinc-400 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 shrink-0"></span>
+                  <span className="text-[11px] text-zinc-400">No sites configured</span>
+                </div>
+                <button
+                  onClick={() => setView("profile")}
+                  className="text-[10px] text-zinc-300 hover:text-white underline cursor-pointer"
+                >
+                  Add sites →
+                </button>
+              </div>
+            )}
+
+            {!hasBlockedSites && hasRestrictedSites && mode === "block" && (
+              <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 text-zinc-400 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 shrink-0"></span>
+                  <span className="text-[11px] text-zinc-400">No blocked sites selected</span>
+                </div>
+                <button
+                  onClick={() => setView("profile")}
+                  className="text-[10px] text-zinc-300 hover:text-white underline cursor-pointer"
+                >
+                  Add sites →
+                </button>
+              </div>
+            )}
+
+            {!hasRestrictedSites && hasBlockedSites && mode === "restrict" && (
+              <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 text-zinc-400 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 shrink-0"></span>
+                  <span className="text-[11px] text-zinc-400">No restricted sites selected</span>
+                </div>
+                <button
+                  onClick={() => setView("profile")}
+                  className="text-[10px] text-zinc-300 hover:text-white underline cursor-pointer"
+                >
+                  Add sites →
+                </button>
+              </div>
+            )}
 
             {/* Action Button */}
             <button
+              disabled={isStartDisabled}
               onClick={handleToggleSession}
-              className={`w-full py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all cursor-pointer shadow-sm ${
+              style={isStartDisabled ? { cursor: NOT_ALLOWED_CURSOR } : undefined}
+              className={`w-full py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all shadow-sm ${
                 isActive
-                  ? "bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30"
-                  : "bg-white hover:bg-zinc-200 text-zinc-950 border border-white"
+                  ? "bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 cursor-pointer"
+                  : isStartDisabled
+                    ? "bg-zinc-900/60 text-zinc-500 border border-zinc-800/80 opacity-60"
+                    : "bg-white hover:bg-zinc-200 text-zinc-950 border border-white cursor-pointer"
               }`}
             >
-              {isActive ? "Stop Focus Session" : "Start Focus Session"}
+              {isActive
+                ? "Stop Focus Session"
+                : !hasBlockedSites && !hasRestrictedSites
+                  ? "Add Sites in Settings to Start"
+                  : (mode === "block" && !hasBlockedSites) || (mode === "restrict" && !hasRestrictedSites)
+                    ? `No ${mode === "block" ? "Blocked" : "Restricted"} Sites Selected`
+                    : "Start Focus Session"}
             </button>
           </div>
 
@@ -481,9 +612,20 @@ export default function App() {
                   <span className="text-xs font-semibold text-zinc-200 block">Restricted Sites</span>
                   <span className="text-[10px] text-zinc-400">Shows reminder banner & timer</span>
                 </div>
-                <span className="text-[10px] text-amber-400 font-mono font-medium">
-                  {restrictedSites.length} active
-                </span>
+                <div className="flex items-center gap-2">
+                  {restrictedSites.length > 0 && (
+                    <button
+                      onClick={handleClearAllRestricted}
+                      className="text-[10px] text-zinc-400 hover:text-rose-400 transition-colors cursor-pointer"
+                      title="Remove all restricted sites"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                  <span className="text-[10px] text-amber-400 font-mono font-medium">
+                    {restrictedSites.length} active
+                  </span>
+                </div>
               </div>
 
               {/* Tag List */}
@@ -535,9 +677,20 @@ export default function App() {
                   <span className="text-xs font-semibold text-zinc-200 block">Blocked Sites</span>
                   <span className="text-[10px] text-zinc-400">Hard lockout screen during Block mode</span>
                 </div>
-                <span className="text-[10px] text-rose-400 font-mono font-medium">
-                  {blockedSites.length} active
-                </span>
+                <div className="flex items-center gap-2">
+                  {blockedSites.length > 0 && (
+                    <button
+                      onClick={handleClearAllBlocked}
+                      className="text-[10px] text-zinc-400 hover:text-rose-400 transition-colors cursor-pointer"
+                      title="Remove all blocked sites"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                  <span className="text-[10px] text-rose-400 font-mono font-medium">
+                    {blockedSites.length} active
+                  </span>
+                </div>
               </div>
 
               {/* Tag List */}

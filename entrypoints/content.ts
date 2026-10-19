@@ -12,7 +12,7 @@ export default defineContentScript({
       const s = Math.max(0, totalSec);
       const seconds = s % 60;
       const minutes = Math.floor(s / 60) % 60;
-      const hours = Math.floor(totalSec / 3600);
+      const hours = Math.floor(s / 3600);
 
       return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
         2,
@@ -37,7 +37,7 @@ export default defineContentScript({
     distBar.style.left = "0";
     distBar.style.width = "100%";
     distBar.style.height = "50px";
-    distBar.style.backgroundColor = "red";
+    distBar.style.backgroundColor = "#be123c";
     distBar.style.color = "white";
     distBar.style.display = "none";
     distBar.style.alignItems = "center";
@@ -65,6 +65,8 @@ export default defineContentScript({
     timer.style.textAlign = "center";
     timer.style.whiteSpace = "nowrap";
     timer.style.letterSpacing = "0.5px";
+    timer.style.fontVariantNumeric = "tabular-nums";
+    timer.style.minWidth = "110px";
     timer.style.flex = "1";
 
     totalTimer.textContent = "(This session: 00:00:00)";
@@ -73,6 +75,8 @@ export default defineContentScript({
     totalTimer.style.padding = "0";
     totalTimer.style.whiteSpace = "nowrap";
     totalTimer.style.opacity = "0.9";
+    totalTimer.style.fontVariantNumeric = "tabular-nums";
+    totalTimer.style.minWidth = "170px";
     totalTimer.style.flex = "1";
     totalTimer.style.textAlign = "right";
 
@@ -294,426 +298,710 @@ export default defineContentScript({
       }
     });
 
-    const ensureDomInjected = () => {
-      const parent = document.body || document.documentElement;
-      if (!parent) return;
-      if (!parent.contains(distBar)) {
-        parent.appendChild(distBar);
-      }
-      if (!parent.contains(widgetContainer)) {
-        parent.appendChild(widgetContainer);
-      }
-    };
-
-    ensureDomInjected();
-
-    let blockObserver: MutationObserver | null = null;
-
-    const removeBlockedPage = () => {
-      if (blockObserver) {
-        blockObserver.disconnect();
-        blockObserver = null;
-      }
-      const existing = document.getElementById("nudge-blocked-root");
-      if (existing) {
-        existing.remove();
-      }
-      const styleEl = document.getElementById("nudge-block-guard-style");
-      if (styleEl) {
-        styleEl.remove();
-      }
-      document.documentElement.style.overflow = "";
-      if (document.body) {
-        document.body.style.overflow = "";
-      }
-    };
-
-    // Dedicated function to render an un-bypassable, aesthetic full-page block overlay
-    const renderBlockedPage = (blockedHost: string) => {
-      // 1. Immediately abort all further pending network loads, scripts, and media on this blocked site
-      try {
-        window.stop();
-      } catch (e) {
-        // ignore if not allowed
-      }
-
-      // 2. Pause and disarm any existing audio/video elements
-      try {
-        document.querySelectorAll("video, audio").forEach((media) => {
-          try {
-            (media as HTMLMediaElement).pause();
-            (media as HTMLMediaElement).src = "";
-            media.remove();
-          } catch {}
-        });
-      } catch {}
-
-      // 3. Document level locks
-      document.title = `Blocked • Nudge Focus (${blockedHost})`;
-
-      // Inject aggressive guard CSS to lock scroll and force highest z-index
-      let guardStyle = document.getElementById("nudge-block-guard-style") as HTMLStyleElement | null;
-      if (!guardStyle) {
-        guardStyle = document.createElement("style");
-        guardStyle.id = "nudge-block-guard-style";
-        guardStyle.textContent = `
-          html {
-            overflow: hidden !important;
-            height: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background-color: #09090b !important;
-          }
-          body {
-            display: none !important;
-            overflow: hidden !important;
-          }
-          #nudge-blocked-root {
-            position: fixed !important;
-            inset: 0 !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 100vw !important;
-            height: 100vh !important;
-            z-index: 2147483647 !important;
-            background: radial-gradient(circle at 50% 15%, rgba(99, 102, 241, 0.18) 0%, #09090b 70%) !important;
-            background-color: #09090b !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            pointer-events: auto !important;
-            visibility: visible !important;
-            opacity: 1 !important;
-          }
-        `;
-        (document.head || document.documentElement).appendChild(guardStyle);
-      }
-
-      // 4. Create or obtain the persistent container
-      let blockedRoot = document.getElementById("nudge-blocked-root");
-      if (!blockedRoot) {
-        blockedRoot = document.createElement("div");
-        blockedRoot.id = "nudge-blocked-root";
-        blockedRoot.style.cssText = `
-          position: fixed !important;
-          top: 0 !important;
-          left: 0 !important;
-          width: 100vw !important;
-          height: 100vh !important;
-          z-index: 2147483647 !important;
-          background: radial-gradient(circle at 50% 15%, rgba(99, 102, 241, 0.18) 0%, #09090b 70%) !important;
-          background-color: #09090b !important;
-          display: flex !important;
-          align-items: center !important;
-          justify-content: center !important;
-          font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-          color: #ffffff !important;
-          box-sizing: border-box !important;
-          padding: 24px !important;
-          user-select: none !important;
-          pointer-events: auto !important;
-          overflow-y: auto !important;
-        `;
-
-        blockedRoot.innerHTML = `
-          <div style="
-            position: relative;
-            max-width: 520px;
-            width: 100%;
-            background: rgba(18, 18, 24, 0.94);
-            backdrop-filter: blur(24px);
-            -webkit-backdrop-filter: blur(24px);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 28px;
-            padding: 44px 36px 36px 36px;
-            box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.85), 0 0 1px 1px rgba(255, 255, 255, 0.08);
-            text-align: center;
-            box-sizing: border-box;
-          ">
-            <!-- Icon Badge -->
-            <div style="
-              width: 72px;
-              height: 72px;
-              margin: 0 auto 20px auto;
-              border-radius: 22px;
-              background: linear-gradient(135deg, rgba(79, 70, 229, 0.22) 0%, rgba(147, 51, 234, 0.22) 100%);
-              border: 1px solid rgba(129, 140, 248, 0.35);
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              box-shadow: 0 8px 24px -4px rgba(79, 70, 229, 0.45);
-            ">
-              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-              </svg>
-            </div>
-
-            <!-- Pill Status Badge -->
-            <div style="
-              display: inline-flex;
-              align-items: center;
-              gap: 8px;
-              padding: 6px 14px;
-              border-radius: 999px;
-              background: rgba(244, 63, 94, 0.14);
-              border: 1px solid rgba(244, 63, 94, 0.32);
-              color: #fda4af;
-              font-size: 11px;
-              font-weight: 700;
-              letter-spacing: 0.08em;
-              text-transform: uppercase;
-              margin-bottom: 16px;
-            ">
-              <span style="
-                width: 7px;
-                height: 7px;
-                border-radius: 50%;
-                background: #f43f5e;
-                box-shadow: 0 0 8px #f43f5e;
-                display: inline-block;
-              "></span>
-              Focus Mode Active • Site Blocked
-            </div>
-
-            <!-- Main Heading -->
-            <h1 style="
-              font-size: 26px;
-              font-weight: 800;
-              color: #ffffff;
-              letter-spacing: -0.02em;
-              margin: 0 0 10px 0;
-              line-height: 1.25;
-            ">Stay Focused. You're in the Zone.</h1>
-
-            <!-- Subtitle -->
-            <p style="
-              font-size: 14px;
-              color: #a1a1aa;
-              line-height: 1.55;
-              margin: 0 0 24px 0;
-            ">
-              Access to <strong style="color: #ffffff; font-weight: 600;">${blockedHost}</strong> is blocked during your Nudge session. Protect your attention and finish what you started.
-            </p>
-
-            <!-- Focus Timer Box -->
-            <div style="
-              background: rgba(9, 9, 11, 0.7);
-              border: 1px solid rgba(255, 255, 255, 0.08);
-              border-radius: 18px;
-              padding: 18px 20px;
-              margin-bottom: 26px;
-            ">
-              <div style="
-                font-size: 10px;
-                font-weight: 700;
-                letter-spacing: 0.1em;
-                color: #818cf8;
-                text-transform: uppercase;
-                margin-bottom: 6px;
-              ">Current Focus Duration</div>
-              <div id="nudge-blocked-timer" style="
-                font-size: 34px;
-                font-weight: 800;
-                font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                font-variant-numeric: tabular-nums;
-                color: #ffffff;
-                letter-spacing: 0.02em;
-                line-height: 1.1;
-              ">00:00:00</div>
-              <div style="
-                font-size: 12px;
-                color: #71717a;
-                margin-top: 6px;
-              ">Every urge resisted strengthens your focus muscle.</div>
-            </div>
-
-            <!-- Action Buttons -->
-            <div style="
-              display: flex;
-              gap: 12px;
-              justify-content: center;
-              flex-wrap: wrap;
-            ">
-              <button id="nudge-block-back-btn" style="
-                background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
-                color: #ffffff;
-                border: none;
-                border-radius: 12px;
-                padding: 12px 22px;
-                font-size: 13px;
-                font-weight: 600;
-                cursor: pointer;
-                box-shadow: 0 4px 14px rgba(79, 70, 229, 0.4);
-                transition: transform 0.15s ease, filter 0.15s ease;
-                outline: none;
-              ">← Return to Work</button>
-
-              <button id="nudge-block-dash-btn" style="
-                background: rgba(255, 255, 255, 0.06);
-                color: #e4e4e7;
-                border: 1px solid rgba(255, 255, 255, 0.12);
-                border-radius: 12px;
-                padding: 12px 20px;
-                font-size: 13px;
-                font-weight: 600;
-                cursor: pointer;
-                transition: background 0.15s ease, border-color 0.15s ease;
-                outline: none;
-              ">Open Dashboard</button>
-            </div>
-
-            <!-- Footer -->
-            <div style="
-              margin-top: 24px;
-              font-size: 11px;
-              font-weight: 600;
-              color: #52525b;
-              letter-spacing: 0.08em;
-              text-transform: uppercase;
-            ">Nudge • Digital Wellbeing</div>
-          </div>
-        `;
-
-        // Event listeners for interactive buttons
-        const backBtn = blockedRoot.querySelector("#nudge-block-back-btn");
-        if (backBtn) {
-          backBtn.addEventListener("mouseenter", () => {
-            (backBtn as HTMLElement).style.transform = "translateY(-1px)";
-            (backBtn as HTMLElement).style.filter = "brightness(1.1)";
-          });
-          backBtn.addEventListener("mouseleave", () => {
-            (backBtn as HTMLElement).style.transform = "translateY(0)";
-            (backBtn as HTMLElement).style.filter = "brightness(1)";
-          });
-          backBtn.addEventListener("click", async () => {
-            if (window.history.length > 1) {
-              window.history.back();
-            } else {
-              try {
-                await browser.runtime.sendMessage({ message: "close_current_tab" });
-              } catch {
-                window.close();
-              }
-            }
-          });
-        }
-
-        const blockDashBtn = blockedRoot.querySelector("#nudge-block-dash-btn");
-        if (blockDashBtn) {
-          blockDashBtn.addEventListener("mouseenter", () => {
-            (blockDashBtn as HTMLElement).style.background = "rgba(255, 255, 255, 0.1)";
-            (blockDashBtn as HTMLElement).style.borderColor = "rgba(255, 255, 255, 0.22)";
-          });
-          blockDashBtn.addEventListener("mouseleave", () => {
-            (blockDashBtn as HTMLElement).style.background = "rgba(255, 255, 255, 0.06)";
-            (blockDashBtn as HTMLElement).style.borderColor = "rgba(255, 255, 255, 0.12)";
-          });
-          blockDashBtn.addEventListener("click", async () => {
-            try {
-              await browser.runtime.sendMessage({ message: "open_dashboard" });
-            } catch (err) {
-              console.error("Could not open dashboard:", err);
-            }
-          });
-        }
-      }
-
-      // Force-hide document.body so the blocked site cannot render underneath
-      if (document.body) {
-        document.body.style.setProperty("display", "none", "important");
-      }
-
-      // Always re-enforce display properties on the container
-      blockedRoot.style.setProperty("display", "flex", "important");
-      blockedRoot.style.setProperty("visibility", "visible", "important");
-      blockedRoot.style.setProperty("opacity", "1", "important");
-      blockedRoot.style.setProperty("z-index", "2147483647", "important");
-
-      // Attach to documentElement so it cannot be wiped by body.innerHTML replacements
-      const mountParent = document.documentElement || document.body;
-      if (mountParent) {
-        if (!mountParent.contains(blockedRoot)) {
-          mountParent.appendChild(blockedRoot);
-        } else if (mountParent.lastElementChild !== blockedRoot) {
-          mountParent.appendChild(blockedRoot);
-        }
-      }
-
-      // 5. Initial timer update
-      if (sessionStartedAt > 0) {
-        const initialElapsed = Math.max(0, Math.floor((Date.now() - sessionStartedAt) / 1000));
-        const blockTimerEl = blockedRoot.querySelector("#nudge-blocked-timer");
-        if (blockTimerEl) {
-          blockTimerEl.textContent = formatSeconds(initialElapsed);
-        }
-      }
-
-      // 6. Active MutationObserver Guard
-      // Ensures our blocked container always stays mounted on top and body remains hidden.
-      if (!blockObserver && mountParent) {
-        blockObserver = new MutationObserver(() => {
-          if (!pageBlocked) return;
-          if (document.body && document.body.style.display !== "none") {
-            document.body.style.setProperty("display", "none", "important");
-          }
-          const currentRoot = document.getElementById("nudge-blocked-root");
-          if (!currentRoot || !mountParent.contains(currentRoot)) {
-            renderBlockedPage(blockedHost);
-          } else if (mountParent.lastElementChild !== currentRoot) {
-            mountParent.appendChild(currentRoot);
-          }
-        });
-
-        blockObserver.observe(mountParent, {
-          childList: true,
-          subtree: true,
-        });
-      }
-    };
-
     // 3. STATE VARIABLES (Anchored to backend start timestamps)
-    let isRestrictedPage = false;
-    let pageBlocked = false;
-    let visitStartedAt = 0;       // Anchored timestamp when this tab started visiting this domain
-    let domainStartedAt = 0;      // Anchored timestamp when the domain's current active span started
-    let baseSiteUsage = 0;        // Total duration (ms) from completed visits to this domain
-    let sessionStartedAt = 0;     // Anchored timestamp when the focus session started
-    let isSyncing = false;
+    const pageLoadTime = Date.now();
 
-    // Per-tab persistent anchor key for this domain
+    // Detect if this page load is a reload (F5 / Ctrl+R / location.reload())
+    const navEntries =
+      typeof performance !== "undefined" && typeof performance.getEntriesByType === "function"
+        ? (performance.getEntriesByType("navigation") as PerformanceNavigationTiming[])
+        : [];
+    const isPageReload = navEntries[0]?.type === "reload";
+
+    // Storage keys for per-tab session state
     const visitStorageKey = `nudge_tab_visit_start_${hostname}`;
-    const getSavedVisitStart = (): number => {
+    const instanceStorageKey = `nudge_tab_instance_${hostname}`;
+    const domainSpanStorageKey = `nudge_tab_domain_span_start_${hostname}`;
+    const baseUsageStorageKey = `nudge_tab_base_usage_${hostname}`;
+    const lastTickStorageKey = `nudge_tab_last_tick_${hostname}`;
+    const tabIdStorageKey = `nudge_tab_id_${hostname}`;
+    const tabActiveStorageKey = `nudge_tab_active_ms_${hostname}`;
+
+    const getStoredTabActiveMs = (): number => {
+      try {
+        const val = sessionStorage.getItem(tabActiveStorageKey);
+        if (val) {
+          const num = parseInt(val, 10);
+          if (!isNaN(num) && num >= 0) return num;
+        }
+      } catch {}
+      return 0;
+    };
+
+    const persistTabActiveMs = (ms: number) => {
+      try {
+        if (ms >= 0) {
+          sessionStorage.setItem(tabActiveStorageKey, String(ms));
+        } else {
+          sessionStorage.removeItem(tabActiveStorageKey);
+        }
+      } catch {}
+    };
+
+    const getLastTick = (): number => {
+      try {
+        const val = sessionStorage.getItem(lastTickStorageKey);
+        if (val) {
+          const num = parseInt(val, 10);
+          if (!isNaN(num) && num > 0) return num;
+        }
+      } catch {}
+      return 0;
+    };
+
+    const updateLastTick = () => {
+      try {
+        sessionStorage.setItem(lastTickStorageKey, String(Date.now()));
+      } catch {}
+    };
+
+    const getStoredVisitStart = (): number => {
       try {
         const val = sessionStorage.getItem(visitStorageKey);
-        const parsed = val ? Number(val) : 0;
-        return typeof parsed === "number" && !isNaN(parsed) && parsed > 0 ? parsed : 0;
-      } catch {
-        return 0;
-      }
+        if (val) {
+          const num = parseInt(val, 10);
+          if (!isNaN(num) && num > 0) return num;
+        }
+      } catch {}
+      return 0;
     };
-    const persistVisitStart = (ts: number) => {
+
+    const persistVisitStart = (start: number) => {
       try {
-        if (ts > 0) {
-          sessionStorage.setItem(visitStorageKey, String(ts));
+        if (start > 0) {
+          sessionStorage.setItem(visitStorageKey, String(start));
         } else {
           sessionStorage.removeItem(visitStorageKey);
         }
       } catch {}
     };
 
-    // Initialize from sessionStorage if this tab was already on this restricted site
-    const existingAnchor = getSavedVisitStart();
-    if (existingAnchor > 0) {
-      visitStartedAt = existingAnchor;
+    const getStoredDomainSpanStart = (): number => {
+      try {
+        const val = sessionStorage.getItem(domainSpanStorageKey);
+        if (val) {
+          const num = parseInt(val, 10);
+          if (!isNaN(num) && num > 0) return num;
+        }
+      } catch {}
+      return 0;
+    };
+
+    const persistDomainSpanStart = (start: number) => {
+      try {
+        if (start > 0) {
+          sessionStorage.setItem(domainSpanStorageKey, String(start));
+        } else {
+          sessionStorage.removeItem(domainSpanStorageKey);
+        }
+      } catch {}
+    };
+
+    const getStoredBaseUsage = (): number => {
+      try {
+        const val = sessionStorage.getItem(baseUsageStorageKey);
+        if (val) {
+          const num = parseInt(val, 10);
+          if (!isNaN(num) && num >= 0) return num;
+        }
+      } catch {}
+      return 0;
+    };
+
+    const persistBaseUsage = (usage: number) => {
+      try {
+        if (usage >= 0) {
+          sessionStorage.setItem(baseUsageStorageKey, String(usage));
+        } else {
+          sessionStorage.removeItem(baseUsageStorageKey);
+        }
+      } catch {}
+    };
+
+    const generateUniqueInstanceId = (): string => {
+      return "tab_" + Date.now() + "_" + Math.random().toString(36).slice(2, 9);
+    };
+
+    const getStoredTabInstanceId = (): string => {
+      try {
+        const val = sessionStorage.getItem(instanceStorageKey);
+        if (val) return val;
+      } catch {}
+      return "";
+    };
+
+    // If reloading an existing tab OR navigating within the same domain on the same tab,
+    // preserve its visit anchor from sessionStorage.
+    // If opening a new tab or duplicated tab, start fresh so it does NOT inherit a sibling's visit.
+    let tabInstanceId = "";
+    let visitStartedAt = 0;
+    let domainSpanStartedAt = 0;
+    let baseSiteUsageMs = 0;
+    // Canonical domain-total snapshot from background (seconds) + when it was taken
+    let usageSnapshotSec = 0;
+    let usageSnapshotAt = 0;
+
+    const storedVisit = getStoredVisitStart();
+    const storedInstance = getStoredTabInstanceId();
+    // Only actual page reloads preserve stored visit start from sessionStorage.
+    // Duplicated tabs (where isPageReload is false) must start fresh and not inherit timers.
+    const isContinuingVisit = isPageReload && storedVisit > 0;
+
+    if (isContinuingVisit) {
+      tabInstanceId = storedInstance || generateUniqueInstanceId();
+      visitStartedAt = storedVisit > 0 ? storedVisit : pageLoadTime;
+      // Never invent a shared domain start from the per-tab visit start
+      domainSpanStartedAt = getStoredDomainSpanStart();
+      baseSiteUsageMs = getStoredBaseUsage();
+      // Wait for storage/sync snapshot so we do not under/over-count the live span
+      usageSnapshotSec = 0;
+      usageSnapshotAt = 0;
+    } else {
+      // New navigation or duplicated tab: generate a fresh unique ID
+      tabInstanceId = generateUniqueInstanceId();
+      visitStartedAt = pageLoadTime;
+      domainSpanStartedAt = 0;
+      baseSiteUsageMs = 0;
+      usageSnapshotSec = 0;
+      usageSnapshotAt = 0;
+      persistVisitStart(visitStartedAt);
+      persistDomainSpanStart(0);
+      persistBaseUsage(0);
+      persistTabActiveMs(0);
     }
+    try {
+      sessionStorage.setItem(instanceStorageKey, tabInstanceId);
+    } catch {}
+
+    let sessionStartedAt = 0;     // Anchored timestamp when the focus session started
+    let isRestrictedPage = false;
+    let pageBlocked = false;
+    let isSyncing = false;
+    let latestSyncSeq = 0;
+
+    // Per-tab persistent blocked state anchor (survives page refresh with 0ms flicker)
+    const blockStorageKey = `nudge_tab_blocked_${hostname}`;
+    const getSavedBlockedState = (): boolean => {
+      try {
+        return sessionStorage.getItem(blockStorageKey) === "true";
+      } catch {
+        return false;
+      }
+    };
+
+    const persistBlockedState = (isBlocked: boolean) => {
+      try {
+        if (isBlocked) {
+          sessionStorage.setItem(blockStorageKey, "true");
+        } else {
+          sessionStorage.removeItem(blockStorageKey);
+        }
+      } catch {}
+    };
 
     // Cache last displayed whole seconds so DOM only updates when whole second changes
     let lastVisitSec = -1;
     let lastTotalSec = -1;
     let lastSessionSec = -1;
 
-    // 4. REAL-TIME LOCAL TIMER DISPLAY (Deterministic tick - no drift, no double counting)
+    // Robust matcher for blocked domains (including x.com <-> twitter.com aliases)
+    function isHostBlocked(host: string, sites: string[]): boolean {
+      if (!host) return false;
+      const cleanHost = host.trim().toLowerCase().replace(/^www\./, "");
+      const cleanSites = sites
+        .map((s) =>
+          s
+            .trim()
+            .toLowerCase()
+            .replace(/^https?:\/\//, "")
+            .replace(/^www\./, "")
+            .replace(/[/?#].*$/, "")
+        )
+        .filter(Boolean);
+
+      if (cleanSites.includes("twitter.com") && !cleanSites.includes("x.com")) {
+        cleanSites.push("x.com");
+      }
+      if (cleanSites.includes("x.com") && !cleanSites.includes("twitter.com")) {
+        cleanSites.push("twitter.com");
+      }
+
+      for (const site of cleanSites) {
+        if (cleanHost === site || cleanHost.endsWith(`.${site}`)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function getMatchingSite(host: string, sites: string[]): string | null {
+      if (!host) return null;
+      const cleanHost = host.trim().toLowerCase().replace(/^www\./, "");
+      const cleanSites = sites
+        .map((s) =>
+          s
+            .trim()
+            .toLowerCase()
+            .replace(/^https?:\/\//, "")
+            .replace(/^www\./, "")
+            .replace(/[/?#].*$/, "")
+        )
+        .filter(Boolean);
+
+      if (cleanSites.includes("twitter.com") && !cleanSites.includes("x.com")) {
+        cleanSites.push("x.com");
+      }
+      if (cleanSites.includes("x.com") && !cleanSites.includes("twitter.com")) {
+        cleanSites.push("twitter.com");
+      }
+
+      for (const site of cleanSites) {
+        if (cleanHost === site || cleanHost.endsWith(`.${site}`)) {
+          return site;
+        }
+      }
+      return null;
+    }
+
+    const ensureDomInjected = () => {
+      if (pageBlocked) return;
+      const target = document.body;
+      if (!target) {
+        if (document.readyState === "loading") {
+          document.addEventListener(
+            "DOMContentLoaded",
+            () => {
+              ensureDomInjected();
+            },
+            { once: true }
+          );
+        }
+        return;
+      }
+      if (!target.contains(distBar)) {
+        target.appendChild(distBar);
+      }
+      if (!target.contains(widgetContainer)) {
+        target.appendChild(widgetContainer);
+      }
+    };
+
+    let blockObserver: MutationObserver | null = null;
+
+    const removeBlockedPage = () => {
+      persistBlockedState(false);
+      if (blockObserver) {
+        blockObserver.disconnect();
+        blockObserver = null;
+      }
+    };
+
+    // Dedicated function to render an un-bypassable, aesthetic full-page block screen via innerHTML
+    const renderBlockedPage = (blockedHost: string) => {
+      pageBlocked = true;
+      isRestrictedPage = false;
+      persistBlockedState(true);
+
+      // 1. Immediately abort pending network loads, scripts, and media on this blocked site
+      try {
+        window.stop();
+      } catch {}
+
+      // Issue 3 Fix: Mute, pause, and detach all pre-buffered media elements to prevent audio leak in background
+      try {
+        document.querySelectorAll("video, audio").forEach((media) => {
+          try {
+            const m = media as HTMLMediaElement;
+            m.pause();
+            m.muted = true;
+            m.removeAttribute("src");
+            m.load();
+          } catch {}
+        });
+      } catch {}
+
+      // 2. Hide distraction bar and widget if present
+      distBar.style.display = "none";
+      widgetContainer.style.display = "none";
+
+      // 3. Document level locks
+      document.title = `Blocked • Nudge Focus (${blockedHost})`;
+
+      // 4. Construct subtle, minimal blocked page HTML
+      const blockedHtml = `
+        <div id="nudge-blocked-container" style="
+          position: fixed !important;
+          inset: 0 !important;
+          top: 0 !important;
+          left: 0 !important;
+          width: 100vw !important;
+          height: 100vh !important;
+          background: #09090b !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+          color: #f4f4f5 !important;
+          box-sizing: border-box !important;
+          padding: 24px !important;
+          user-select: none !important;
+          z-index: 2147483647 !important;
+        ">
+          <div style="
+            max-width: 380px;
+            width: 100%;
+            text-align: center;
+            box-sizing: border-box;
+          ">
+            <!-- Subtle status mark -->
+            <div style="
+              display: inline-flex;
+              align-items: center;
+              gap: 6px;
+              font-size: 11px;
+              font-weight: 600;
+              letter-spacing: 0.06em;
+              text-transform: uppercase;
+              color: #71717a;
+              margin-bottom: 20px;
+            ">
+              <span style="
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: #a1a1aa;
+                display: inline-block;
+              "></span>
+              Nudge Focus
+            </div>
+
+            <!-- Clean Direct Title -->
+            <h1 style="
+              font-size: 22px;
+              font-weight: 600;
+              color: #fafafa;
+              letter-spacing: -0.02em;
+              margin: 0 0 8px 0;
+              line-height: 1.3;
+            ">${blockedHost} is blocked</h1>
+
+            <!-- Understated Subtitle -->
+            <p style="
+              font-size: 13px;
+              color: #71717a;
+              line-height: 1.5;
+              margin: 0 0 24px 0;
+            ">
+              This site is blocked during your active focus sprint.
+            </p>
+
+            <!-- Quiet Session Duration -->
+            <div style="
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              padding: 12px 16px;
+              background: rgba(255, 255, 255, 0.03);
+              border: 1px solid rgba(255, 255, 255, 0.08);
+              border-radius: 12px;
+              margin-bottom: 24px;
+            ">
+              <span style="font-size: 12px; color: #71717a;">Focus elapsed</span>
+              <span id="nudge-blocked-timer" style="
+                font-size: 14px;
+                font-weight: 600;
+                color: #e4e4e7;
+                font-variant-numeric: tabular-nums;
+                font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+              ">${sessionStartedAt > 0 ? formatSeconds(Math.max(0, Math.floor((Date.now() - sessionStartedAt) / 1000))) : "00:00:00"}</span>
+            </div>
+
+            <!-- Clean Action Buttons -->
+            <div style="
+              display: flex;
+              gap: 10px;
+              justify-content: center;
+            ">
+              <button id="nudge-block-back-btn" style="
+                flex: 1;
+                background: #27272a;
+                color: #f4f4f5;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 10px;
+                padding: 9px 16px;
+                font-size: 13px;
+                font-weight: 500;
+                cursor: pointer;
+                transition: background 0.15s ease, border-color 0.15s ease;
+                outline: none;
+              ">Go back</button>
+
+              <button id="nudge-block-dash-btn" style="
+                background: transparent;
+                color: #a1a1aa;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 10px;
+                padding: 9px 16px;
+                font-size: 13px;
+                font-weight: 500;
+                cursor: pointer;
+                transition: background 0.15s ease, color 0.15s ease;
+                outline: none;
+              ">Dashboard</button>
+            </div>
+
+            <!-- Quiet Hint -->
+            <div style="
+              margin-top: 24px;
+              font-size: 11px;
+              color: #52525b;
+              letter-spacing: 0.02em;
+            ">Alt + ← to return</div>
+          </div>
+        </div>
+      `;
+
+      // 5. Direct innerHTML assignment to wipe out all page scripts, React roots, and styling
+      if (document.documentElement) {
+        document.documentElement.innerHTML = `
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Blocked • Nudge Focus (${blockedHost})</title>
+            <style>
+              html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #09090b !important;
+                overflow: hidden !important;
+                width: 100vw !important;
+                height: 100vh !important;
+              }
+            </style>
+          </head>
+          <body>${blockedHtml}</body>
+        `;
+      } else if (document.body) {
+        document.body.innerHTML = blockedHtml;
+        document.body.style.cssText = "margin:0!important;padding:0!important;background:#09090b!important;overflow:hidden!important;";
+      }
+
+      // Wire interactive buttons
+      const backBtn = document.getElementById("nudge-block-back-btn");
+      if (backBtn) {
+        backBtn.onmouseenter = () => {
+          backBtn.style.background = "#3f3f46";
+          backBtn.style.borderColor = "rgba(255, 255, 255, 0.18)";
+        };
+        backBtn.onmouseleave = () => {
+          backBtn.style.background = "#27272a";
+          backBtn.style.borderColor = "rgba(255, 255, 255, 0.1)";
+        };
+        backBtn.onclick = async () => {
+          if (window.history.length > 1) {
+            window.history.back();
+          } else {
+            try {
+              await browser.runtime.sendMessage({ message: "close_current_tab" });
+            } catch {
+              window.close();
+            }
+          }
+        };
+      }
+
+      const dashBtn = document.getElementById("nudge-block-dash-btn");
+      if (dashBtn) {
+        dashBtn.onmouseenter = () => {
+          dashBtn.style.background = "rgba(255, 255, 255, 0.05)";
+          dashBtn.style.color = "#f4f4f5";
+        };
+        dashBtn.onmouseleave = () => {
+          dashBtn.style.background = "transparent";
+          dashBtn.style.color = "#a1a1aa";
+        };
+        dashBtn.onclick = async () => {
+          try {
+            await browser.runtime.sendMessage({ message: "open_dashboard" });
+          } catch (e) {
+            console.error("Dashboard error:", e);
+          }
+        };
+      }
+
+      // Active Guard: If any external script attempts to wipe or mount over our blocked container, restore it
+      if (!blockObserver && document.documentElement) {
+        blockObserver = new MutationObserver(() => {
+          if (!pageBlocked) return;
+          if (!document.getElementById("nudge-blocked-container")) {
+            renderBlockedPage(blockedHost);
+          }
+        });
+        blockObserver.observe(document.documentElement, {
+          childList: true,
+          subtree: true,
+        });
+      }
+
+      // DOMContentLoaded hook: if document was still streaming when stop() occurred
+      if (document.readyState === "loading") {
+        document.addEventListener(
+          "DOMContentLoaded",
+          () => {
+            if (pageBlocked && !document.getElementById("nudge-blocked-container")) {
+              renderBlockedPage(blockedHost);
+            }
+          },
+          { once: true }
+        );
+      }
+    };
+
+    // Synchronous refresh recovery from sessionStorage: eliminates any flicker or content flash on page refresh
+    if (getSavedBlockedState()) {
+      pageBlocked = true;
+      renderBlockedPage(hostname);
+    }
+
+    // Instant check from local cache - runs at document_start without waiting on service worker
+    const checkImmediateBlock = async () => {
+      try {
+        const data = (await browser.storage.local.get([
+          "isActive",
+          "mode",
+          "blockedSites",
+          "startedAt",
+        ])) as {
+          isActive?: boolean;
+          mode?: string;
+          blockedSites?: string[];
+          startedAt?: number;
+        };
+
+        if (data.isActive && data.mode === "block") {
+          const sites: string[] = Array.isArray(data.blockedSites) ? data.blockedSites : [];
+
+          if (isHostBlocked(hostname, sites)) {
+            if (typeof data.startedAt === "number" && data.startedAt > 0) {
+              sessionStartedAt = data.startedAt;
+            }
+            pageBlocked = true;
+            isRestrictedPage = false;
+            persistBlockedState(true);
+            renderBlockedPage(hostname);
+            return true;
+          } else if (pageBlocked) {
+            pageBlocked = false;
+            removeBlockedPage();
+            window.location.reload();
+            return false;
+          }
+        } else if (pageBlocked) {
+          pageBlocked = false;
+          removeBlockedPage();
+          window.location.reload();
+          return false;
+        }
+      } catch (err) {
+        console.warn("Immediate block check:", err);
+      }
+      return false;
+    };
+
+    // Instant check from local cache for restricted sites (runs at document_start without 00:00:00 flicker)
+    const checkImmediateRestricted = async () => {
+      try {
+        const data = (await browser.storage.local.get([
+          "isActive",
+          "mode",
+          "restrictedSites",
+          "startedAt",
+          "sessionSiteUsage",
+          "domainSpans",
+          "activeVisits",
+        ])) as {
+          isActive?: boolean;
+          mode?: string;
+          restrictedSites?: string[];
+          startedAt?: number;
+          sessionSiteUsage?: Record<string, number>;
+          domainSpans?: Record<string, any>;
+          activeVisits?: Record<string, any>;
+        };
+
+        if (data.isActive && data.mode === "restrict") {
+          const sites: string[] = Array.isArray(data.restrictedSites) ? data.restrictedSites : [];
+
+          if (isHostBlocked(hostname, sites)) {
+            const sStart = typeof data.startedAt === "number" && data.startedAt > 0 ? data.startedAt : 0;
+            sessionStartedAt = sStart;
+            isRestrictedPage = true;
+
+            const matched = getMatchingSite(hostname, sites) || hostname;
+
+            // Usage ms from prior completed spans
+            const usage = data.sessionSiteUsage ?? {};
+            if (typeof usage[matched] === "number") {
+              baseSiteUsageMs = usage[matched];
+              persistBaseUsage(baseSiteUsageMs);
+            }
+
+            // Active shared domain span only — never substitute per-tab visit start
+            const activeDomainSpan = data.domainSpans?.[matched];
+            if (activeDomainSpan?.startedAt && (sStart === 0 || activeDomainSpan.startedAt >= sStart)) {
+              domainSpanStartedAt = activeDomainSpan.startedAt;
+            } else {
+              domainSpanStartedAt = 0;
+            }
+            persistDomainSpanStart(domainSpanStartedAt);
+
+            const checkNow = Date.now();
+            const liveSpanStart = domainSpanStartedAt > 0 ? domainSpanStartedAt : visitStartedAt;
+            const effectiveSpanStart =
+              liveSpanStart > 0 && sStart > 0 ? Math.max(liveSpanStart, sStart) : liveSpanStart;
+            const liveAnchor =
+              domainSpanStartedAt === 0 && baseSiteUsageMs > 0
+                ? Math.max(effectiveSpanStart, pageLoadTime)
+                : effectiveSpanStart;
+            const liveMs = liveAnchor > 0 ? Math.max(0, checkNow - liveAnchor) : 0;
+            const totalDurationMs = baseSiteUsageMs + liveMs;
+            usageSnapshotSec = Math.floor(totalDurationMs / 1000);
+            usageSnapshotAt = checkNow - (totalDurationMs % 1000);
+
+            // Tab visit start (per-tab lifetime)
+            if (isContinuingVisit) {
+              const storedStart = getStoredVisitStart();
+              if (storedStart > 0 && (sStart === 0 || storedStart >= sStart)) {
+                visitStartedAt = storedStart;
+              }
+            } else if (!visitStartedAt || visitStartedAt === 0) {
+              visitStartedAt = pageLoadTime;
+              persistVisitStart(visitStartedAt);
+            }
+
+            warning.textContent = "You've been distracted";
+            distBar.style.backgroundColor = "#be123c";
+
+            ensureDomInjected();
+            distBar.style.display = "flex";
+            updateDisplayTimers();
+          } else {
+            // Issue 4 Fix: If site is not in restricted list, immediately hide distraction bar
+            isRestrictedPage = false;
+            distBar.style.display = "none";
+          }
+        } else {
+          isRestrictedPage = false;
+          distBar.style.display = "none";
+        }
+      } catch (err) {
+        console.warn("Immediate restricted check:", err);
+      }
+    };
+
+    // 4. REAL-TIME LOCAL TIMER DISPLAY
+    // Right: shared domain usage (canonical snapshot + live tick while span open)
+    // Middle: per-tab visit lifetime from visitStartedAt (foreground or background)
     const updateDisplayTimers = () => {
       const now = Date.now();
 
@@ -737,11 +1025,45 @@ export default defineContentScript({
 
       // Distraction Bar Timers
       if (isRestrictedPage && visitStartedAt > 0) {
-        const currentVisitSec = Math.max(0, Math.floor((now - visitStartedAt) / 1000));
-        const totalSiteSec = Math.max(
+        // Right timer: shared domain usage across session (base accumulated ms + live span ms)
+        const liveSpanStart = domainSpanStartedAt > 0 ? domainSpanStartedAt : visitStartedAt;
+        const effectiveSpanStart =
+          liveSpanStart > 0 && sessionStartedAt > 0
+            ? Math.max(liveSpanStart, sessionStartedAt)
+            : liveSpanStart;
+        const liveAnchor =
+          domainSpanStartedAt === 0 && baseSiteUsageMs > 0
+            ? Math.max(effectiveSpanStart, pageLoadTime)
+            : effectiveSpanStart;
+        const liveMs = liveAnchor > 0 ? Math.max(0, now - liveAnchor) : 0;
+        let totalDurationMs = baseSiteUsageMs + liveMs;
+        if (sessionStartedAt > 0) {
+          const maxSessionMs = Math.max(0, now - sessionStartedAt);
+          if (totalDurationMs > maxSessionMs) {
+            totalDurationMs = maxSessionMs;
+          }
+        }
+        let totalSiteSec = Math.floor(totalDurationMs / 1000);
+
+        // Monotonic display guard: total session domain usage never decreases during active session
+        if (lastTotalSec >= 0 && totalSiteSec < lastTotalSec) {
+          totalSiteSec = lastTotalSec;
+        }
+
+        // Middle timer: independent per-tab visit lifetime (not capped by domain total)
+        const effectiveVisitStart =
+          sessionStartedAt > 0
+            ? Math.max(visitStartedAt, sessionStartedAt)
+            : visitStartedAt;
+        let currentVisitSec = Math.max(
           0,
-          Math.floor((baseSiteUsage + Math.max(0, now - domainStartedAt)) / 1000),
+          Math.floor((now - effectiveVisitStart) / 1000),
         );
+
+        // Monotonic display guard: visit seconds never step backward
+        if (lastVisitSec >= 0 && currentVisitSec < lastVisitSec) {
+          currentVisitSec = lastVisitSec;
+        }
 
         if (currentVisitSec !== lastVisitSec) {
           lastVisitSec = currentVisitSec;
@@ -752,6 +1074,8 @@ export default defineContentScript({
           lastTotalSec = totalSiteSec;
           totalTimer.textContent = `(This session: ${formatSeconds(totalSiteSec)})`;
         }
+
+        updateLastTick();
       }
     };
 
@@ -759,20 +1083,25 @@ export default defineContentScript({
     const syncSite = async () => {
       if (isSyncing) return;
       isSyncing = true;
+      const syncSeq = ++latestSyncSeq;
 
       try {
+        const isVisible = document.visibilityState === "visible";
         const response = await browser.runtime.sendMessage({
           message: "check_site",
           hostname,
-          tabVisitStartedAt: visitStartedAt > 0 ? visitStartedAt : (getSavedVisitStart() || undefined),
+          tabInstanceId,
+          tabVisitStartedAt: visitStartedAt,
+          isVisible,
         });
 
-        // If background worker is temporarily waking up, do not wipe state
-        if (!response) {
+        // If background worker is temporarily waking up, or response is stale, do not wipe state
+        if (!response || syncSeq !== latestSyncSeq) {
           return;
         }
 
         if (!response.isActive) {
+          persistBlockedState(false);
           if (pageBlocked) {
             pageBlocked = false;
             removeBlockedPage();
@@ -780,15 +1109,20 @@ export default defineContentScript({
             return;
           }
 
+          persistVisitStart(0);
+          persistDomainSpanStart(0);
+          persistBaseUsage(0);
+          persistTabActiveMs(0);
           isRestrictedPage = false;
           visitStartedAt = 0;
-          domainStartedAt = 0;
-          baseSiteUsage = 0;
+          domainSpanStartedAt = 0;
+          baseSiteUsageMs = 0;
+          usageSnapshotSec = 0;
+          usageSnapshotAt = 0;
           sessionStartedAt = 0;
           lastVisitSec = -1;
           lastTotalSec = -1;
           lastSessionSec = -1;
-          persistVisitStart(0);
 
           distBar.style.display = "none";
           p1.textContent = "00:00:00";
@@ -802,6 +1136,20 @@ export default defineContentScript({
         }
 
         sessionStartedAt = response.sessionStartedAt ?? 0;
+
+        // Check if tabId returned reveals this is a duplicated tab
+        if (response.tabId !== undefined) {
+          try {
+            const storedTabId = sessionStorage.getItem(tabIdStorageKey);
+            if (storedTabId && storedTabId !== String(response.tabId)) {
+              // Different tab ID means this tab was duplicated from another tab!
+              tabInstanceId = generateUniqueInstanceId();
+              sessionStorage.setItem(instanceStorageKey, tabInstanceId);
+              persistVisitStart(response.visitStartedAt || pageLoadTime);
+            }
+            sessionStorage.setItem(tabIdStorageKey, String(response.tabId));
+          } catch {}
+        }
 
         // Active state badge styling
         statusDot.style.background = "#22c55e";
@@ -822,6 +1170,10 @@ export default defineContentScript({
         // Block Mode
         if (response.isBlocked) {
           pageBlocked = true;
+          isRestrictedPage = false;
+          if (response.sessionStartedAt) {
+            sessionStartedAt = response.sessionStartedAt;
+          }
           distBar.style.display = "none";
           widgetContainer.style.display = "none";
           renderBlockedPage(hostname);
@@ -837,55 +1189,88 @@ export default defineContentScript({
           return;
         }
 
-        // Restrict Mode & Monitored Sites in Block Mode
-        if (response.isRestricted) {
+        // Restrict Mode Only
+        if (response.isRestricted && response.mode === "restrict") {
           isRestrictedPage = true;
 
-          // Anchor visitStartedAt for this tab - NEVER jump forward to Date.now()!
-          const saved = getSavedVisitStart();
-          if (!visitStartedAt) {
-            if (saved > 0) {
-              visitStartedAt = saved;
-            } else if (response.visitStartedAt && response.visitStartedAt > 0) {
+          const sStart = response.sessionStartedAt ?? sessionStartedAt;
+          sessionStartedAt = sStart;
+
+          // Canonical tab visit start from background — adopt if uninitialized or earlier (never shift into future)
+          if (typeof response.visitStartedAt === "number" && response.visitStartedAt > 0) {
+            if (visitStartedAt === 0 || response.visitStartedAt <= visitStartedAt) {
               visitStartedAt = response.visitStartedAt;
-            } else {
-              visitStartedAt = Date.now();
+              persistVisitStart(visitStartedAt);
             }
-            persistVisitStart(visitStartedAt);
-          } else if (response.visitStartedAt && response.visitStartedAt > 0 && response.visitStartedAt < visitStartedAt) {
-            visitStartedAt = response.visitStartedAt;
-            persistVisitStart(visitStartedAt);
           }
 
-          if (!domainStartedAt || (response.domainStartedAt && response.domainStartedAt < domainStartedAt)) {
-            domainStartedAt = response.domainStartedAt || visitStartedAt;
-          }
-          baseSiteUsage = response.baseSiteUsage ?? 0;
-
-          if (response.mode === "block") {
-            warning.textContent = "Focus Sprint Active (Block Mode)";
-            distBar.style.backgroundColor = "#e11d48";
+          // Shared domain span start — 0 means no live span (never use visitStartedAt)
+          if (typeof response.domainSpanStartedAt === "number" && response.domainSpanStartedAt > 0) {
+            domainSpanStartedAt = response.domainSpanStartedAt;
+          } else if (typeof response.domainStartedAt === "number" && response.domainStartedAt > 0) {
+            domainSpanStartedAt = response.domainStartedAt;
           } else {
-            warning.textContent = "You've been distracted";
-            distBar.style.backgroundColor = "red";
+            domainSpanStartedAt = 0;
           }
+          persistDomainSpanStart(domainSpanStartedAt);
+
+          // Canonical base site usage from background (completed intervals only)
+          const rawBaseUsage =
+            typeof response.baseSiteUsageMs === "number"
+              ? response.baseSiteUsageMs
+              : (typeof response.baseSiteUsage === "number" ? response.baseSiteUsage : 0);
+          baseSiteUsageMs = rawBaseUsage;
+          persistBaseUsage(baseSiteUsageMs);
+
+          // Prefer background total snapshot (already = base + live span at response time)
+          const snapshotAt =
+            typeof response.usageSnapshotAt === "number" && response.usageSnapshotAt > 0
+              ? response.usageSnapshotAt
+              : Date.now();
+          if (typeof response.totalSiteUsageSec === "number" && response.totalSiteUsageSec >= 0) {
+            // Reconcile snapshot without letting a stale response overwrite newer timer state
+            if (snapshotAt >= usageSnapshotAt) {
+              usageSnapshotSec = response.totalSiteUsageSec;
+              usageSnapshotAt = snapshotAt;
+            }
+          } else {
+            let effectiveSpanStart = 0;
+            if (domainSpanStartedAt > 0) {
+              effectiveSpanStart =
+                sStart > 0 ? Math.max(domainSpanStartedAt, sStart) : domainSpanStartedAt;
+            } else if (baseSiteUsageMs === 0 && visitStartedAt > 0) {
+              effectiveSpanStart =
+                sStart > 0 ? Math.max(visitStartedAt, sStart) : visitStartedAt;
+            }
+            const liveMs =
+              effectiveSpanStart > 0 ? Math.max(0, snapshotAt - effectiveSpanStart) : 0;
+            const totalMs = baseSiteUsageMs + liveMs;
+            usageSnapshotSec = Math.floor(totalMs / 1000);
+            usageSnapshotAt = snapshotAt - (totalMs % 1000);
+          }
+
+          warning.textContent = "You've been distracted";
+          distBar.style.backgroundColor = "#be123c";
 
           ensureDomInjected();
           distBar.style.display = "flex";
           updateDisplayTimers();
         } else {
-          // Only tear down restricted UI if the session is inactive or page not restricted
-          if (!response.isActive || (response.mode !== "restrict" && response.mode !== "block")) {
-            isRestrictedPage = false;
-            visitStartedAt = 0;
-            domainStartedAt = 0;
-            baseSiteUsage = 0;
-            lastVisitSec = -1;
-            lastTotalSec = -1;
-            persistVisitStart(0);
-            distBar.style.display = "none";
-            updateDisplayTimers();
-          }
+          // Site is not restricted — tear down distraction bar
+          isRestrictedPage = false;
+          visitStartedAt = 0;
+          domainSpanStartedAt = 0;
+          baseSiteUsageMs = 0;
+          usageSnapshotSec = 0;
+          usageSnapshotAt = 0;
+          persistVisitStart(0);
+          persistDomainSpanStart(0);
+          persistBaseUsage(0);
+          persistTabActiveMs(0);
+          lastVisitSec = -1;
+          lastTotalSec = -1;
+          distBar.style.display = "none";
+          updateDisplayTimers();
         }
       } catch (error) {
         console.error("Nudge sync error:", error);
@@ -895,6 +1280,8 @@ export default defineContentScript({
     };
 
     // 6. INITIALIZE IMMEDIATELY
+    void checkImmediateBlock();
+    void checkImmediateRestricted();
     void syncSite();
 
     // 7. ULTRA-SMOOTH LOCAL DISPLAY TICK (250ms interval catches second roll-overs with zero drift)
@@ -905,17 +1292,62 @@ export default defineContentScript({
       void syncSite();
     }, 3000);
 
-    // 9. RE-SYNC ON TAB VISIBILITY CHANGE
+    // 9. Visibility changes must not pause/reset domain or visit accounting.
+    // Keep displaying from current anchors; refresh heartbeat without wiping state.
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") {
+      void syncSite();
+    });
+
+    // 10. RE-SYNC ON SPA NAVIGATION & BFCACHE RESTORATION
+    const onLocationChange = () => {
+      void syncSite();
+    };
+
+    window.addEventListener("popstate", onLocationChange);
+
+    // Re-sync and reset leaving flag when page is restored from bfcache (Back/Forward button)
+    window.addEventListener("pageshow", (event) => {
+      hasNotifiedLeaving = false;
+      if (event.persisted) {
+        void checkImmediateBlock();
+        void checkImmediateRestricted();
         void syncSite();
       }
     });
 
-    // 10. RE-SYNC ON SPA NAVIGATION
-    window.addEventListener("popstate", () => {
-      void syncSite();
-    });
+    // Intercept pushState & replaceState for immediate reaction to in-page SPA navigations
+    try {
+      const origPush = history.pushState;
+      history.pushState = function (this: History, ...args: Parameters<History["pushState"]>) {
+        const ret = origPush.apply(this, args);
+        window.dispatchEvent(new Event("nudge_location_change"));
+        return ret;
+      };
+      const origReplace = history.replaceState;
+      history.replaceState = function (this: History, ...args: Parameters<History["replaceState"]>) {
+        const ret = origReplace.apply(this, args);
+        window.dispatchEvent(new Event("nudge_location_change"));
+        return ret;
+      };
+      window.addEventListener("nudge_location_change", onLocationChange);
+    } catch {}
+
+    // 10b. NOTIFY BACKGROUND SCRIPT WHEN TAB CLOSES OR UNLOADS
+    let hasNotifiedLeaving = false;
+    const notifyTabLeaving = () => {
+      if (!isRestrictedPage || hasNotifiedLeaving) return;
+      hasNotifiedLeaving = true;
+      try {
+        browser.runtime.sendMessage({
+          message: "tab_leaving",
+          tabInstanceId,
+          hostname,
+        });
+      } catch {}
+    };
+
+    window.addEventListener("pagehide", notifyTabLeaving);
+    window.addEventListener("beforeunload", notifyTabLeaving);
 
     // 11. REACT TO STORAGE CHANGES (e.g. Session start / stop from popup)
     browser.storage.onChanged.addListener((changes, area) => {
@@ -925,7 +1357,10 @@ export default defineContentScript({
         changes.isActive ||
         changes.mode ||
         changes.blockedSites ||
-        changes.restrictedSites
+        changes.restrictedSites ||
+        changes.startedAt ||
+        changes.domainSpans ||
+        changes.sessionSiteUsage
       ) {
         if (
           pageBlocked &&
@@ -938,17 +1373,85 @@ export default defineContentScript({
           return;
         }
 
-        // Only reset visit counters if the session actually ended
-        if (changes.isActive?.newValue === false) {
+        if (changes.startedAt && typeof changes.startedAt.newValue === "number") {
+          const newStart = changes.startedAt.newValue > 0 ? changes.startedAt.newValue : 0;
+          if (newStart !== sessionStartedAt) {
+            sessionStartedAt = newStart;
+            // Clean reset when a new focus session starts
+            if (newStart > 0) {
+              baseSiteUsageMs = 0;
+              persistBaseUsage(0);
+              persistTabActiveMs(0);
+              visitStartedAt = pageLoadTime >= newStart ? pageLoadTime : newStart;
+              persistVisitStart(visitStartedAt);
+              domainSpanStartedAt = 0;
+              persistDomainSpanStart(0);
+              usageSnapshotSec = 0;
+              usageSnapshotAt = 0;
+              lastVisitSec = -1;
+              lastTotalSec = -1;
+              lastSessionSec = -1;
+            }
+          }
+        }
+
+        // If mode changed to something other than "restrict", tear down distraction bar immediately
+        if (changes.mode && changes.mode.newValue !== "restrict") {
           isRestrictedPage = false;
           visitStartedAt = 0;
-          domainStartedAt = 0;
-          baseSiteUsage = 0;
+          domainSpanStartedAt = 0;
+          baseSiteUsageMs = 0;
+          usageSnapshotSec = 0;
+          usageSnapshotAt = 0;
+          persistVisitStart(0);
+          persistDomainSpanStart(0);
+          persistBaseUsage(0);
+          persistTabActiveMs(0);
+          lastVisitSec = -1;
+          lastTotalSec = -1;
+          distBar.style.display = "none";
+        }
+
+        // If restrictedSites changed and current site is no longer restricted, tear down immediately
+        if (changes.restrictedSites && Array.isArray(changes.restrictedSites.newValue)) {
+          const newSites: string[] = changes.restrictedSites.newValue;
+          if (!isHostBlocked(hostname, newSites)) {
+            isRestrictedPage = false;
+            visitStartedAt = 0;
+            domainSpanStartedAt = 0;
+            baseSiteUsageMs = 0;
+            usageSnapshotSec = 0;
+            usageSnapshotAt = 0;
+            persistVisitStart(0);
+            persistDomainSpanStart(0);
+            persistBaseUsage(0);
+            persistTabActiveMs(0);
+            lastVisitSec = -1;
+            lastTotalSec = -1;
+            distBar.style.display = "none";
+          }
+        }
+
+        // Immediately re-check blocked and restricted state from storage on any session changes
+        void checkImmediateBlock();
+        void checkImmediateRestricted();
+
+        // Only reset visit counters if the session actually ended
+        if (changes.isActive?.newValue === false) {
+          persistVisitStart(0);
+          persistDomainSpanStart(0);
+          persistBaseUsage(0);
+          persistTabActiveMs(0);
+          isRestrictedPage = false;
+          visitStartedAt = 0;
+          domainSpanStartedAt = 0;
+          baseSiteUsageMs = 0;
+          usageSnapshotSec = 0;
+          usageSnapshotAt = 0;
           sessionStartedAt = 0;
           lastVisitSec = -1;
           lastTotalSec = -1;
           lastSessionSec = -1;
-          persistVisitStart(0);
           distBar.style.display = "none";
         }
 
